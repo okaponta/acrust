@@ -19,6 +19,19 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
+/// bin の mtime を基準時刻からのオフセット（秒）で明示的に設定する。
+fn set_mtimes(package_dir: &Path, offsets: &[(&str, u64)]) {
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+    for (alias, offset) in offsets {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(package_dir.join(format!("src/bin/{alias}.rs")))
+            .unwrap();
+        file.set_modified(base + std::time::Duration::from_secs(*offset))
+            .unwrap();
+    }
+}
+
 /// `acrust new abc042` が作る想定の形。C・D が ARC 側を指す実在のケースを使う。
 fn write_package(dir: &Path) {
     std::fs::create_dir_all(dir.join("src/bin")).unwrap();
@@ -129,12 +142,14 @@ fn the_most_recently_edited_bin_wins() {
     let package_dir = root.join("abc042");
     write_package(&package_dir);
 
-    // c.rs だけ書き換える。
+    // c.rs だけ書き換える。mtime は明示的に設定する。
+    // 4 ファイルの書き込みが同じ時刻に収まる環境があり、暗黙の順序には頼れない。
     std::fs::write(
         package_dir.join("src/bin/c.rs"),
         "fn main() { /* solved */ }\n",
     )
     .unwrap();
+    set_mtimes(&package_dir, &[("a", 0), ("b", 0), ("c", 60), ("d", 0)]);
 
     let package = Package::load(&package_dir.join("Cargo.toml")).unwrap();
     let resolved = resolve_problem(&package, None, ResolveMode::Mtime, Some(TEMPLATE)).unwrap();
@@ -179,6 +194,32 @@ path = "src/bin/a.rs"
         .unwrap_err()
         .to_string();
     assert!(err.contains("acrust migrate"), "{err}");
+
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_tie_on_the_newest_mtime_is_ambiguous_rather_than_arbitrary() {
+    let root = scratch("tie");
+    let package_dir = root.join("abc042");
+    write_package(&package_dir);
+
+    // c と d を編集したが、保存時刻が同じだった場合。
+    for alias in ["c", "d"] {
+        std::fs::write(
+            package_dir.join(format!("src/bin/{alias}.rs")),
+            "fn main() { /* solved */ }\n",
+        )
+        .unwrap();
+    }
+    set_mtimes(&package_dir, &[("a", 0), ("b", 0), ("c", 60), ("d", 60)]);
+
+    let package = Package::load(&package_dir.join("Cargo.toml")).unwrap();
+    let err = resolve_problem(&package, None, ResolveMode::Mtime, Some(TEMPLATE))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("mtime が同じ"), "{err}");
+    assert!(err.contains("c, d"), "{err}");
 
     std::fs::remove_dir_all(&root).unwrap();
 }

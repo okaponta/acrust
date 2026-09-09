@@ -269,12 +269,32 @@ fn resolve_by_mtime(package: &Package, template_src: Option<&str>) -> Result<Res
         );
     }
 
-    let (bin, _, _) = stats
+    let newest = stats
         .iter()
-        .max_by_key(|(_, mtime, _)| *mtime)
+        .map(|(_, mtime, _)| *mtime)
+        .max()
         .expect("bins is non-empty");
+    let newest_bins: Vec<&Bin> = stats
+        .iter()
+        .filter(|(_, mtime, _)| *mtime == newest)
+        .map(|(bin, _, _)| *bin)
+        .collect();
+
+    // mtime が同着のときにどれかを黙って選ぶと、submit で別の問題を提出しかねない。
+    // 誤推定のコストが非対称なので（決定 D7）、決められないときは決められないと言う。
+    if newest_bins.len() > 1 {
+        bail!(
+            "どの問題を指すか決められません（{} の mtime が同じです）。問題を指定してください",
+            newest_bins
+                .iter()
+                .map(|b| b.alias.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
     Ok(Resolved {
-        bin: (*bin).clone(),
+        bin: newest_bins[0].clone(),
         origin: Origin::Inferred,
     })
 }
