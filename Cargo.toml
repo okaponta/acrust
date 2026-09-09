@@ -1,0 +1,35 @@
+[package]
+name = "acrust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "A CLI for competitive programming on AtCoder with Rust"
+repository = "https://github.com/okaponta/acrust"
+homepage = "https://github.com/okaponta/acrust"
+license = "MIT OR Apache-2.0"
+keywords = ["atcoder", "competitive-programming", "cli"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[lib]
+name = "acrust"
+path = "src/lib.rs"
+
+[[bin]]
+name = "acrust"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+cargo_metadata = "0.20"
+clap = { version = "4.6.6", features = ["derive"] }
+directories = "6.0.0"
+owo-colors = "4.4.0"
+regex = "1.13.1"
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "cookies", "rustls", "charset", "http2", "gzip", "form", "system-proxy"] }
+rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.20"
+toml = "1.1.5"
+toml_edit = "0.25.13"

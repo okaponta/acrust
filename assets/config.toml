@@ -1,0 +1,54 @@
+# acrust の設定ファイル。
+# 詳細: https://github.com/okaponta/acrust
+
+version = 1
+
+[contest]
+# コンテストパッケージの配置先。{contest} が展開される。
+path = "./{contest}"
+# /tasks が取れない（＝コンテスト開始前）ときに作る問題。
+default-problems = ["a", "b", "c", "d", "e", "f", "g"]
+
+[package]
+# 生成する Cargo.toml の edition。`acrust env update` がジャッジ環境に追従させる。
+edition = "2024"
+# rust-toolchain.toml を生成して、ジャッジと同じ rustc に固定する。
+# 手元だけ新しい rustc になると「テストは全 AC、提出して初めて CE」を踏む。
+pin-toolchain = true
+# ローカルでは最適化しつつ overflow チェックを効かせる。
+profile = """
+[dev]
+opt-level = 3
+debug-assertions = true
+overflow-checks = true
+"""
+
+[template]
+src = ".acrust/template/main.rs"
+dependencies = ".acrust/template/dependencies.toml"
+cargo-lock = ".acrust/template/Cargo.lock"
+copy-dir = ".acrust/template/copy"
+
+[testcases]
+# {package}（リポジトリルートからのパッケージ相対パス）と {problem}（alias）が展開される。
+path = "{package}/testcases/{problem}.toml"
+
+[test]
+profile = "dev"        # dev | release
+jobs = 0               # 0 = 論理コア数
+timeout-margin = 1.5   # 問題の TL に掛ける倍率
+resolve = "mtime"      # 引数省略時の問題推定: mtime | single | never
+
+[submit]
+language-id = ""                     # 空なら提出ページの <select> から自動判定（推奨）
+language-pattern = '^Rust \(rustc'
+test-before-submit = true
+watch = true                         # 提出後に結果を追跡する
+watch-interval-ms = 2000             # 初回間隔。以降 1.5 倍ずつ、最大 10000ms
+watch-timeout-s = 60                 # 超えたら提出 URL を出して終了
+
+[atcoder]
+language-list = "https://img.atcoder.jp/file/language-update/2025-10/language-list.html"
+request-interval-ms = 1000
+retry = 3
+user-agent = "acrust/{version} (+https://github.com/okaponta/acrust)"
