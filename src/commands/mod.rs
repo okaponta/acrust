@@ -1,6 +1,9 @@
 pub mod auth;
 pub mod contest;
+pub mod env;
 pub mod init;
+pub mod migrate;
+pub mod open;
 pub mod run;
 pub mod submit;
 pub mod test;

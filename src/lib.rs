@@ -13,6 +13,7 @@ pub mod manifest;
 pub mod package;
 pub mod runner;
 pub mod session;
+pub mod snowchains;
 pub mod testcases;
 pub mod ui;
 pub mod workspace;
