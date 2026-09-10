@@ -11,7 +11,7 @@ $ acrust submit a
 ```
 
 > **状態: 開発中（v0.1 未リリース）**
-> 現在動くのは `init` / `login` / `logout` / `status` / `new` / `fetch` です。実装状況は下の[ロードマップ](#ロードマップ)を参照してください。
+> 現在動くのは `init` / `login` / `logout` / `status` / `new` / `fetch` / `test` です。実装状況は下の[ロードマップ](#ロードマップ)を参照してください。
 
 ## なぜ作るか
 
@@ -93,6 +93,23 @@ $ acrust login
 コンテスト開始前に `acrust new` を打つと、`/tasks` が 404 なのを検知してスケルトンだけ作ります。
 開始後に `acrust fetch` を打てば、問題 URL とサンプルが埋まります。
 
+### テスト
+
+```console
+$ acrust test a
+
+  AC   sample1      6 ms
+  AC   sample2      5 ms
+
+✓ 2/2 AC
+```
+
+ビルドは1回、ケースの実行は並列（既定で論理コア数）。判定は `AC` / `WA` / `RE` / `TLE` で、
+失敗したケースは入力・期待・実際を並べ、食い違う行に印を付けます。制限時間は問題の TL に
+`timeout-margin`（既定 1.5）を掛けた値です。全 AC なら終了コード 0、そうでなければ 1 を返します。
+
+インタラクティブ問題はサンプルテストの形にならないので、その旨を表示してスキップします。
+
 `test` / `run` は問題を省略すると `src/bin/*.rs` のうち **mtime が最新のもの**を対象にし、選んだ問題を必ず表示します。`submit` は省略時のみ y/N の確認が入ります（誤提出はペナルティが付いて取り消せないため）。
 
 ## ディレクトリ構成
@@ -145,7 +162,7 @@ acrust は「AtCoder とのやり取り + ビルド/テスト」に専念しま�
 | M0 | CLI の骨組み、`config.toml` の読み込み、パッケージ・問題解決、`init` | ✅ |
 | M1 | `login` / `logout` / `status`、セッションの永続化 | ✅ |
 | M2 | `new` / `fetch`（`/tasks` と `/tasks_print` のパース、testcases TOML 生成） | ✅ |
-| M3 | `test`（ビルド・並列実行・TL・判定・差分表示） | |
+| M3 | `test`（ビルド・並列実行・TL・判定・差分表示） | ✅ |
 | M4 | `run` / `submit`（言語 ID 自動判定、結果追跡） | |
 | M5 | `env update`、`open`、`migrate` | |
 | M6 | crates.io / GitHub Releases での公開 | |
