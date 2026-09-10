@@ -11,7 +11,7 @@ $ acrust submit a
 ```
 
 > **状態: 開発中（v0.1 未リリース）**
-> 現在動くのは `init` / `login` / `logout` / `status` / `new` / `fetch` / `test` / `run` / `submit` です。実装状況は下の[ロードマップ](#ロードマップ)を参照してください。
+> コマンドは一通り実装済みです。crates.io への公開はこれからです（[ロードマップ](#ロードマップ)）。
 
 ## なぜ作るか
 
@@ -162,14 +162,53 @@ atcoder-rust/
 ~/.cache/acrust/                      # キャッシュ
 ```
 
+## ジャッジ環境への追従
+
+```console
+$ acrust env update
+
+  → 言語一覧: https://img.atcoder.jp/file/language-update/2025-10/language-list.html
+  → インストールスクリプト: .../088-1-82-0_rustc.toml
+  → Cargo.lock: https://raw.githubusercontent.com/rust-lang-ja/atcoder-proposal/.../Cargo.lock
+
+── Rust (rustc 1.89.0) との差分
+  rustc:         1.75.0 → 1.89.0
+  edition:       2021 → 2024
+  依存クレート:   追加 64 / 削除 0 / 変更 2
+    ~ itertools =0.11.0 → =0.14.0
+    ~ proconio =0.4.5 → =0.5.0
+
+この内容で書き換えますか？ [y/N]:
+```
+
+書き換えるのは `.acrust/template/dependencies.toml`、`.acrust/template/Cargo.lock`、`rust-toolchain.toml`、`.acrust/config.toml` の `edition` です。設定は `toml_edit` で書き換えるのでコメントも書式も残ります。
+
+新しい言語アップデートが出たら `acrust env update --language-list <URL>` でその URL を指すと、以後は設定に覚えます。
+
 ## cargo-compete からの移行
 
-`acrust migrate` が一度きりの変換を行います。dry-run が既定で、`--write` を付けて初めて書き込みます。
+`acrust migrate` が一度きりの変換を行います。dry-run が既定で、`--write` を付けて初めて書き込みます。実行前にクリーンな working tree を要求します（`--allow-dirty` で回避可）。
 
 変換前に **往復検証**を行い、1 件でも不一致があれば何も書かずに中断します。
 
 - 移行後のメタデータから再構成した問題 URL が、移行前の全 bin と文字列一致すること
 - 変換後の TOML から読み直した入出力が、変換前の YAML とバイト単位で一致すること
+
+cargo-compete 形式を読むのは `acrust migrate` の中だけです。`test` や `submit` は acrust 形式しか見ないので、互換のためのコードがツール全体に散らばりません。
+
+```console
+$ acrust migrate
+
+  対象:           /Users/you/repos/atcoder-rust
+
+── 移行の内容
+  パッケージ:     426 個
+  bin:           2716 本（問題 URL は全件一致）
+  テストケース:   2716 ファイル / 7534 ケース（往復検証ずみ）
+  ...
+
+これは下見です。実際に書き換えるには --write を付けてください
+```
 
 ## 範囲外
 
@@ -188,7 +227,7 @@ acrust は「AtCoder とのやり取り + ビルド/テスト」に専念しま�
 | M2 | `new` / `fetch`（`/tasks` と `/tasks_print` のパース、testcases TOML 生成） | ✅ |
 | M3 | `test`（ビルド・並列実行・TL・判定・差分表示） | ✅ |
 | M4 | `run` / `submit`（言語 ID 自動判定、結果追跡） | ✅ |
-| M5 | `env update`、`open`、`migrate` | |
+| M5 | `env update`、`open`、`migrate` | ✅ |
 | M6 | crates.io / GitHub Releases での公開 | |
 
 ## 開発

@@ -70,9 +70,21 @@ pub fn render_manifest(
     }
 
     out.push_str("\n[dependencies]\n");
-    out.push_str(dependencies.trim_end());
+    out.push_str(strip_dependencies_header(dependencies).trim_end());
     out.push('\n');
     Ok(out)
+}
+
+/// テンプレートの依存リストから `[dependencies]` の見出し行を落とす。
+///
+/// テンプレートは「`[dependencies]` の中身」として扱う。見出しごと書かれていると、
+/// 生成する `Cargo.toml` で節が二重になり、Cargo がテーブルの再定義として拒否する。
+pub fn strip_dependencies_header(dependencies: &str) -> &str {
+    let trimmed = dependencies.trim_start();
+    match trimmed.strip_prefix("[dependencies]") {
+        Some(rest) => rest.trim_start_matches(['\r', '\n']),
+        None => dependencies,
+    }
 }
 
 pub fn bin_name(contest: &str, alias: &str) -> String {
@@ -291,6 +303,23 @@ mod tests {
 
         // [dev] は [profile.dev] にならないと Cargo が読まない。
         assert_eq!(parsed["profile"]["dev"]["opt-level"].as_integer(), Some(3));
+        assert_eq!(parsed["dependencies"]["proconio"].as_str(), Some("=0.5.0"));
+    }
+
+    #[test]
+    fn a_dependencies_header_in_the_template_is_not_duplicated() {
+        // `acrust env update` が書いたテンプレートには見出しが入りうる。
+        // そのまま差し込むと [dependencies] が二重になり Cargo が拒否する。
+        let manifest = render_manifest(
+            "abc474",
+            &problems(),
+            "2024",
+            "",
+            "[dependencies]\nproconio = \"=0.5.0\"\n",
+        )
+        .unwrap();
+        assert_eq!(manifest.matches("[dependencies]").count(), 1, "{manifest}");
+        let parsed: toml::Table = toml::from_str(&manifest).unwrap();
         assert_eq!(parsed["dependencies"]["proconio"].as_str(), Some("=0.5.0"));
     }
 

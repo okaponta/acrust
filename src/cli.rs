@@ -1,7 +1,7 @@
 //! コマンド体系（設計 §4.1）。エントリポイントは `acrust` の1本のみ（決定 D1）。
 
 use crate::commands;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -109,7 +109,14 @@ enum Command {
 #[derive(Debug, Subcommand)]
 enum EnvCommand {
     /// 依存クレート・Cargo.lock・edition・rustc バージョンを取得して更新する
-    Update,
+    Update {
+        /// 言語一覧ページの URL（新しい言語アップデートを指すときに使う）
+        #[arg(long, value_name = "URL")]
+        language_list: Option<String>,
+        /// 確認せずに書き換える
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 pub fn run() -> Result<ExitCode> {
@@ -119,7 +126,7 @@ pub fn run() -> Result<ExitCode> {
         Command::Logout => commands::auth::logout()?,
         Command::Status { offline } => commands::auth::status(offline)?,
         Command::Init { path, force } => commands::init::run(path, force)?,
-        Command::Migrate { .. } => unimplemented("acrust migrate", "M5")?,
+        Command::Migrate { write, allow_dirty } => commands::migrate::run(write, allow_dirty)?,
         Command::New { contest } => commands::contest::new(&contest)?,
         Command::Fetch { contest, overwrite } => commands::contest::fetch(contest, overwrite)?,
         Command::Test { problem, release } => return commands::test::run(problem, release),
@@ -129,17 +136,12 @@ pub fn run() -> Result<ExitCode> {
             force,
             no_watch,
         } => return commands::submit::run(problem, force, no_watch),
-        Command::Open { .. } => unimplemented("acrust open", "M5")?,
+        Command::Open { problem } => commands::open::run(problem)?,
         Command::Env { command } => match command {
-            EnvCommand::Update => unimplemented("acrust env update", "M5")?,
+            EnvCommand::Update { language_list, yes } => commands::env::update(language_list, yes)?,
         },
     }
     Ok(ExitCode::SUCCESS)
-}
-
-/// 未実装のコマンドは黙って何もせず終わるのではなく、はっきり落とす。
-fn unimplemented(command: &str, milestone: &str) -> Result<()> {
-    bail!("`{command}` はまだ実装されていません（{milestone} で実装予定）");
 }
 
 #[cfg(test)]
@@ -182,7 +184,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Env {
-                command: EnvCommand::Update
+                command: EnvCommand::Update { .. }
             }
         ));
     }
