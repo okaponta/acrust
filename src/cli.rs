@@ -63,6 +63,9 @@ enum Command {
     Fetch {
         /// コンテスト ID（省略時はカレントのパッケージ）
         contest: Option<String>,
+        /// 手で足したケースや手で直した match を残さず、取得した内容で置き換える
+        #[arg(long)]
+        overwrite: bool,
     },
     /// ビルドしてサンプルテストを実行する
     Test {
@@ -111,8 +114,8 @@ pub fn run() -> Result<ExitCode> {
         Command::Status { offline } => commands::auth::status(offline)?,
         Command::Init { path, force } => commands::init::run(path, force)?,
         Command::Migrate { .. } => unimplemented("acrust migrate", "M5")?,
-        Command::New { .. } => unimplemented("acrust new", "M2")?,
-        Command::Fetch { .. } => unimplemented("acrust fetch", "M2")?,
+        Command::New { contest } => commands::contest::new(&contest)?,
+        Command::Fetch { contest, overwrite } => commands::contest::fetch(contest, overwrite)?,
         Command::Test { .. } => unimplemented("acrust test", "M3")?,
         Command::Run { .. } => unimplemented("acrust run", "M3")?,
         Command::Submit { .. } => unimplemented("acrust submit", "M4")?,
