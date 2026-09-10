@@ -59,15 +59,10 @@ fn read_secret(label: &str) -> Result<String> {
 }
 
 fn print_instructions() {
-    ui::info("AtCoder のログインは Cloudflare Turnstile (CAPTCHA) で守られているため、");
-    ui::info("ブラウザでログインしたうえでセッションクッキーを貼り付けてください。");
-    ui::info("");
-    ui::info("  1. ブラウザで https://atcoder.jp/login にログインする");
-    ui::info("  2. DevTools を開く（Chrome: Option+Command+I / Safari: Option+Command+I）");
-    ui::info("  3. Application（Safari は ストレージ）→ Cookies → https://atcoder.jp");
-    ui::info("  4. REVEL_SESSION の Value をコピーする");
-    ui::info("");
-    ui::info("貼り付けは伏せ字になります。REVEL_SESSION=... の形のままでも構いません。");
+    ui::info(
+        "ブラウザの https://atcoder.jp の Cookie から REVEL_SESSION の値を貼り付けてください。",
+    );
+    ui::info("（DevTools → Application → Cookies → https://atcoder.jp）");
     ui::info("");
 }
 
