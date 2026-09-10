@@ -71,6 +71,9 @@ enum Command {
     Test {
         /// 問題（例: a）。省略時は mtime が最新のものを推定する
         problem: Option<String>,
+        /// release プロファイルでビルドする
+        #[arg(long)]
+        release: bool,
     },
     /// 標準入力を素通しして実行する
     Run {
@@ -116,7 +119,7 @@ pub fn run() -> Result<ExitCode> {
         Command::Migrate { .. } => unimplemented("acrust migrate", "M5")?,
         Command::New { contest } => commands::contest::new(&contest)?,
         Command::Fetch { contest, overwrite } => commands::contest::fetch(contest, overwrite)?,
-        Command::Test { .. } => unimplemented("acrust test", "M3")?,
+        Command::Test { problem, release } => return commands::test::run(problem, release),
         Command::Run { .. } => unimplemented("acrust run", "M3")?,
         Command::Submit { .. } => unimplemented("acrust submit", "M4")?,
         Command::Open { .. } => unimplemented("acrust open", "M5")?,
