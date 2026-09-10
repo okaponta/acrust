@@ -228,7 +228,7 @@ acrust は「AtCoder とのやり取り + ビルド/テスト」に専念しま�
 | M3 | `test`（ビルド・並列実行・TL・判定・差分表示） | ✅ |
 | M4 | `run` / `submit`（言語 ID 自動判定、結果追跡） | ✅ |
 | M5 | `env update`、`open`、`migrate` | ✅ |
-| M6 | crates.io / GitHub Releases での公開 | |
+| M6 | crates.io / GitHub Releases での公開 | リリースワークフローと `cargo publish --dry-run` は済み。公開はこれから |
 
 ## 開発
 
