@@ -22,8 +22,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// AtCoder にログインする（ID / パスワードを対話入力）
-    Login,
+    /// AtCoder にログインする（ブラウザのセッションクッキーを取り込む）
+    Login {
+        /// REVEL_SESSION の値。省略時は対話入力（伏せ字）
+        #[arg(long, value_name = "REVEL_SESSION")]
+        cookie: Option<String>,
+    },
     /// 保存済みのセッションを破棄する
     Logout,
     /// ログイン状態・設定の場所・ジャッジ環境のバージョンを表示する
@@ -102,7 +106,7 @@ enum EnvCommand {
 pub fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Login => commands::auth::login()?,
+        Command::Login { cookie } => commands::auth::login(cookie)?,
         Command::Logout => commands::auth::logout()?,
         Command::Status { offline } => commands::auth::status(offline)?,
         Command::Init { path, force } => commands::init::run(path, force)?,

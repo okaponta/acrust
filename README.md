@@ -4,7 +4,7 @@
 
 ```console
 $ cargo install acrust
-$ acrust login
+$ acrust login          # ブラウザのセッションクッキーを貼り付ける
 $ acrust new abc474
 $ acrust test a
 $ acrust submit a
@@ -44,7 +44,24 @@ AtCoder は言語アップデートごとに、ジャッジが実際に使う `C
 
 ### 5. セッションを 0600 で保存する
 
-AtCoder のセッションクッキーは有効期限 1 年半、持っていれば本人として提出できるパスワード同等の資格情報です。acrust は `~/.local/share/acrust/session.json` に **0600 で**保存し、パスワードは保存しません。パーミッションが緩いファイルを見つけたら警告して直します。
+AtCoder のセッションクッキーは有効期限が長く、持っていれば本人として提出できるパスワード同等の資格情報です。acrust は `~/.local/share/acrust/session.json` に **0600 で**保存します。パスワードはそもそも受け取りません。パーミッションが緩いファイルを見つけたら警告して直します。
+
+## ログインについて
+
+AtCoder の `/login` は **Cloudflare Turnstile (CAPTCHA)** で守られているため、ID / パスワードをプログラムから POST してもログインできません（csrf_token が正しくても「エラーが発生しました。」で弾かれます）。CAPTCHA を迂回するのは筋が悪いので、acrust はブラウザで取得済みのセッションクッキーを取り込みます。
+
+```console
+$ acrust login
+```
+
+1. ブラウザで https://atcoder.jp/login にログインする
+2. DevTools を開く
+3. Application（Safari は ストレージ）→ Cookies → `https://atcoder.jp`
+4. `REVEL_SESSION` の Value をコピーして貼り付ける（伏せ字で入力されます）
+
+`REVEL_SESSION=...` の形のまま貼っても、Cookie ヘッダを丸ごと貼っても受け付けます。スクリプトから使うときは `acrust login --cookie <値>`。
+
+一度取り込めば有効期限まで（実測で約 180 日）そのまま使えます。
 
 ## コマンド
 

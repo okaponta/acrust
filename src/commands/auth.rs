@@ -2,47 +2,73 @@
 
 use crate::atcoder::{auth, AtCoderClient};
 use crate::config::{AtcoderConfig, LoadedConfig};
-use crate::session;
+use crate::session::{self, Session};
 use crate::ui;
 use crate::workspace::{resolve_problem, Origin, Package};
-use anyhow::{bail, Context as _, Result};
-use std::io::Write as _;
+use anyhow::{Context as _, Result};
 use std::sync::OnceLock;
 
-/// ID / パスワードを対話入力してセッションを保存する。
-pub fn login() -> Result<()> {
+/// ブラウザで取得したセッションクッキーを取り込んで保存する。
+///
+/// AtCoder の `/login` は Cloudflare Turnstile で守られており、ID / パスワードの
+/// POST はプログラムからは通らない（`atcoder::auth` のモジュールコメント参照）。
+pub fn login(cookie: Option<String>) -> Result<()> {
     let atcoder = atcoder_config();
     let client = AtCoderClient::new(&atcoder)?;
 
-    if client.load_session()? {
+    if cookie.is_none() && client.load_session()? {
         if let Some(user) = auth::current_user(&client)? {
             ui::ok(&format!("すでに {user} としてログインしています"));
-            ui::info("別のユーザーでログインし直すには `acrust logout` を実行してください");
+            ui::info("別のユーザーで入り直すには `acrust logout` を実行してください");
             return Ok(());
         }
         // 期限切れのセッションが残っていた。捨ててから入り直す。
         client.clear_cookies();
     }
 
-    let username = prompt("AtCoder ID: ")?;
-    if username.is_empty() {
-        bail!("AtCoder ID が空です");
-    }
-    let password =
-        rpassword::prompt_password("Password: ").context("パスワードを読めませんでした")?;
-    if password.is_empty() {
-        bail!("パスワードが空です");
-    }
+    let pasted = match cookie {
+        Some(cookie) => cookie,
+        None => {
+            print_instructions();
+            read_secret("REVEL_SESSION: ")?
+        }
+    };
+    let value = auth::extract_session_value(&pasted).context("セッションクッキーが空です")?;
 
-    let user = auth::login(&client, &username, &password)?;
-    let session = client
-        .session(&user)
-        .context("ログインには成功しましたが、セッションクッキーを取得できませんでした")?;
+    let user = auth::verify_session_cookie(&client, &value)?;
+    let session = Session::new(value, user.clone());
     let path = session::save(&session)?;
 
     ui::ok(&format!("{user} としてログインしました"));
     ui::field("session", &format!("{} (0600)", path.display()));
     Ok(())
+}
+
+/// 端末なら伏せ字で、パイプ越しなら普通に 1 行読む。
+fn read_secret(label: &str) -> Result<String> {
+    use std::io::IsTerminal as _;
+
+    if std::io::stdin().is_terminal() {
+        return rpassword::prompt_password(label).context("入力を読めませんでした");
+    }
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .context("標準入力を読めませんでした")?;
+    Ok(line)
+}
+
+fn print_instructions() {
+    ui::info("AtCoder のログインは Cloudflare Turnstile (CAPTCHA) で守られているため、");
+    ui::info("ブラウザでログインしたうえでセッションクッキーを貼り付けてください。");
+    ui::info("");
+    ui::info("  1. ブラウザで https://atcoder.jp/login にログインする");
+    ui::info("  2. DevTools を開く（Chrome: Option+Command+I / Safari: Option+Command+I）");
+    ui::info("  3. Application（Safari は ストレージ）→ Cookies → https://atcoder.jp");
+    ui::info("  4. REVEL_SESSION の Value をコピーする");
+    ui::info("");
+    ui::info("貼り付けは伏せ字になります。REVEL_SESSION=... の形のままでも構いません。");
+    ui::info("");
 }
 
 /// 保存済みのセッションを破棄する。
@@ -213,16 +239,6 @@ fn atcoder_config() -> AtcoderConfig {
     LoadedConfig::find()
         .map(|loaded| loaded.config.atcoder)
         .unwrap_or_default()
-}
-
-fn prompt(label: &str) -> Result<String> {
-    print!("{label}");
-    std::io::stdout().flush().ok();
-    let mut line = String::new();
-    std::io::stdin()
-        .read_line(&mut line)
-        .context("標準入力を読めませんでした")?;
-    Ok(line.trim().to_owned())
 }
 
 #[cfg(test)]

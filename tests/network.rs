@@ -31,3 +31,19 @@ fn an_anonymous_client_is_not_logged_in() {
     let client = AtCoderClient::new(&AtcoderConfig::default()).unwrap();
     assert_eq!(auth::current_user(&client).unwrap(), None);
 }
+
+/// ID / パスワードでのログインを塞いでいる当の Turnstile が、まだそこにあるか。
+///
+/// これが落ちたら AtCoder が CAPTCHA を外したということなので、
+/// ID / パスワードでのログインを復活させられる（`atcoder::auth` 参照）。
+#[test]
+#[ignore = "AtCoder に実際にアクセスするため"]
+fn the_login_form_is_still_behind_a_captcha() {
+    let client = AtCoderClient::new(&AtcoderConfig::default()).unwrap();
+    let response = client.get(auth::LOGIN_URL).unwrap();
+    response.error_for_status().unwrap();
+    assert!(
+        auth::has_captcha(&response.body),
+        "Turnstile が消えている。ID / パスワードでのログインを検討できる"
+    );
+}
