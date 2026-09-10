@@ -1,0 +1,31 @@
+name: Release
+
+# タグを push するとビルド済みバイナリを GitHub Releases に上げる。
+# `cargo install` は reqwest / scraper の依存を全部ビルドするため数分かかるので、
+# `cargo binstall acrust` が数秒で終わるようにしておく（決定 D14）。
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  upload:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: acrust
+          target: ${{ matrix.target }}
+          token: ${{ secrets.GITHUB_TOKEN }}
