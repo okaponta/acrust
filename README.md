@@ -11,7 +11,7 @@ $ acrust submit a
 ```
 
 > **状態: 開発中（v0.1 未リリース）**
-> 現在動くのは `init` / `login` / `logout` / `status` / `new` / `fetch` / `test` です。実装状況は下の[ロードマップ](#ロードマップ)を参照してください。
+> 現在動くのは `init` / `login` / `logout` / `status` / `new` / `fetch` / `test` / `run` / `submit` です。実装状況は下の[ロードマップ](#ロードマップ)を参照してください。
 
 ## なぜ作るか
 
@@ -34,7 +34,9 @@ AtCoder は言語アップデートごとに、ジャッジが実際に使う `C
 
 ### 3. `language_id` をハードコードしない
 
-提出ページの `<select name="data.LanguageId">` から `Rust (rustc ...)` を自動で選びます。言語アップデートで ID が変わっても壊れません。
+提出ページの `<select name="data.LanguageId">` から `Rust (rustc ...)` を自動で選び、`~/.cache/acrust/` に覚えます。言語アップデートで ID が変わっても壊れません。
+
+実際、cargo-compete が書き込む `5054` に対して、現在の AtCoder が使う ID は **6088** です。ハードコードは既に壊れています。
 
 ### 4. AtCoder に優しい
 
@@ -110,6 +112,28 @@ $ acrust test a
 
 インタラクティブ問題はサンプルテストの形にならないので、その旨を表示してスキップします。
 
+### 提出
+
+```console
+$ acrust submit c
+  → abc474 c (src/bin/c.rs)
+  AC   sample1      12 ms
+  AC   sample2      11 ms
+✓ 2/2 AC
+  ログイン:       okaponta
+  言語:           Rust (rustc 1.89.0) (id=6088)
+✓ 提出しました  WJ  https://atcoder.jp/contests/abc474/submissions/12345678
+  WJ   2s
+  AC   5s           312 ms / 4.2 MB
+```
+
+提出するのは常に `src/bin/{alias}.rs` そのもので、差し替え口はありません。「提出したもの = リポジトリの中身」が常に成り立ちます。
+
+- 提出前にサンプルテストを通します（`-f` で省略）
+- **問題を省略したときだけ** y/N の確認が入ります。明示指定なら確認なしで即提出します
+- 提出後は結果を追跡します（`--no-watch` で無効化）。間隔は 2 秒から 1.5 倍ずつ、上限 10 秒、1 分で打ち切り。確定したら即やめ、`Retry-After` に従い、連続で失敗したら URL を出して諦めます
+- 追跡には AtCoder のページ自身が使う軽量な API を叩きます（提出一覧ページ 27KB に対して 651 バイト）
+
 `test` / `run` は問題を省略すると `src/bin/*.rs` のうち **mtime が最新のもの**を対象にし、選んだ問題を必ず表示します。`submit` は省略時のみ y/N の確認が入ります（誤提出はペナルティが付いて取り消せないため）。
 
 ## ディレクトリ構成
@@ -163,7 +187,7 @@ acrust は「AtCoder とのやり取り + ビルド/テスト」に専念しま�
 | M1 | `login` / `logout` / `status`、セッションの永続化 | ✅ |
 | M2 | `new` / `fetch`（`/tasks` と `/tasks_print` のパース、testcases TOML 生成） | ✅ |
 | M3 | `test`（ビルド・並列実行・TL・判定・差分表示） | ✅ |
-| M4 | `run` / `submit`（言語 ID 自動判定、結果追跡） | |
+| M4 | `run` / `submit`（言語 ID 自動判定、結果追跡） | ✅ |
 | M5 | `env update`、`open`、`migrate` | |
 | M6 | crates.io / GitHub Releases での公開 | |
 
