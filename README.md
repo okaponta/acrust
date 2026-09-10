@@ -11,7 +11,7 @@ $ acrust submit a
 ```
 
 > **状態: 開発中（v0.1 未リリース）**
-> 現在動くのは `init` / `login` / `logout` / `status` です。実装状況は下の[ロードマップ](#ロードマップ)を参照してください。
+> 現在動くのは `init` / `login` / `logout` / `status` / `new` / `fetch` です。実装状況は下の[ロードマップ](#ロードマップ)を参照してください。
 
 ## なぜ作るか
 
@@ -79,6 +79,20 @@ $ acrust login
 | `acrust env update` | ジャッジ環境から依存・`Cargo.lock`・`edition`・rustc を再生成する |
 | `acrust migrate` | cargo-compete 形式のリポジトリを移行する（往復検証つき・dry-run 既定） |
 
+### `new` / `fetch` が壊さないもの
+
+取得し直しても手を加えたものは残ります。
+
+- `src/bin/*.rs` は**絶対に上書きしません**（解答が入っているため）
+- `Cargo.toml` は `toml_edit` で必要な項目だけ足します。手で足した依存もコメントも残ります
+- テストケースは、手で足した `[[cases]]` と手で直した `match` / `[float]` を残し、サンプルだけを更新します
+  （複数解を許す問題で `match = "words"` に直す運用は自動判定では再現できないため）
+
+まっさらにしたいときは `acrust fetch --overwrite`。
+
+コンテスト開始前に `acrust new` を打つと、`/tasks` が 404 なのを検知してスケルトンだけ作ります。
+開始後に `acrust fetch` を打てば、問題 URL とサンプルが埋まります。
+
 `test` / `run` は問題を省略すると `src/bin/*.rs` のうち **mtime が最新のもの**を対象にし、選んだ問題を必ず表示します。`submit` は省略時のみ y/N の確認が入ります（誤提出はペナルティが付いて取り消せないため）。
 
 ## ディレクトリ構成
@@ -130,7 +144,7 @@ acrust は「AtCoder とのやり取り + ビルド/テスト」に専念しま�
 |---|---|---|
 | M0 | CLI の骨組み、`config.toml` の読み込み、パッケージ・問題解決、`init` | ✅ |
 | M1 | `login` / `logout` / `status`、セッションの永続化 | ✅ |
-| M2 | `new` / `fetch`（`/tasks` と `/tasks_print` のパース、testcases TOML 生成） | |
+| M2 | `new` / `fetch`（`/tasks` と `/tasks_print` のパース、testcases TOML 生成） | ✅ |
 | M3 | `test`（ビルド・並列実行・TL・判定・差分表示） | |
 | M4 | `run` / `submit`（言語 ID 自動判定、結果追跡） | |
 | M5 | `env update`、`open`、`migrate` | |
