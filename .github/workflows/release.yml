@@ -1,8 +1,8 @@
 name: Release
 
-# タグを push するとビルド済みバイナリを GitHub Releases に上げる。
-# `cargo install` は reqwest / scraper の依存を全部ビルドするため数分かかるので、
-# `cargo binstall acrust` が数秒で終わるようにしておく（決定 D14）。
+# Pushing a tag uploads prebuilt binaries to GitHub Releases.
+# `cargo install` has to build all of reqwest and scraper and takes minutes, so
+# this is what makes `cargo binstall acrust` finish in seconds.
 on:
   push:
     tags: ["v*"]
