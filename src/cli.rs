@@ -47,7 +47,7 @@ enum Command {
     },
     /// cargo-compete 形式のリポジトリを acrust 形式へ移行する
     Migrate {
-        /// 実際に書き込む（既定は差分レポートのみ）
+        /// 実際に書き込む（既定は dry-run）
         #[arg(long)]
         write: bool,
         /// git の working tree が汚れていても実行する
@@ -94,7 +94,7 @@ enum Command {
         #[arg(long)]
         no_watch: bool,
     },
-    /// 解答をクリップボードにコピーする（ブラウザから手で提出するとき用）
+    /// 解答をクリップボードにコピーする
     Copy {
         /// 問題（例: a）。省略時は mtime が最新のものを推定する
         problem: Option<String>,
