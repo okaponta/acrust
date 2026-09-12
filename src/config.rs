@@ -56,27 +56,16 @@ pub struct ContestConfig {
     /// コンテストパッケージの配置先。`{contest}` が展開される。
     #[serde(default = "default_contest_path")]
     pub path: String,
-    /// `/tasks` が取れない（コンテスト開始前）ときに作る問題。
-    #[serde(default = "default_problems")]
-    pub default_problems: Vec<String>,
 }
 
 fn default_contest_path() -> String {
     "./{contest}".to_owned()
 }
 
-fn default_problems() -> Vec<String> {
-    ["a", "b", "c", "d", "e", "f", "g"]
-        .iter()
-        .map(|s| (*s).to_owned())
-        .collect()
-}
-
 impl Default for ContestConfig {
     fn default() -> Self {
         Self {
             path: default_contest_path(),
-            default_problems: default_problems(),
         }
     }
 }
@@ -465,10 +454,6 @@ mod tests {
     fn defaults_are_the_documented_ones() {
         let config = Config::parse("version = 1").unwrap();
         assert_eq!(config.contest.path, "./{contest}");
-        assert_eq!(
-            config.contest.default_problems,
-            ["a", "b", "c", "d", "e", "f", "g"]
-        );
         assert_eq!(config.package.edition, "2024");
         assert!(config.package.pin_toolchain);
         assert_eq!(config.test.resolve, ResolveMode::Mtime);

@@ -50,7 +50,7 @@ fn sync(contest: &str, may_create: bool, overwrite: bool) -> Result<()> {
     let _ = client.load_session();
 
     let (entries, pages) = fetch_contest(&client, contest, &config)?;
-    let problems = problem_specs(&config, &entries);
+    let problems = problem_specs(&entries);
     if problems.is_empty() {
         bail!("{contest} の問題を1問も決められませんでした");
     }
@@ -82,19 +82,21 @@ fn fetch_contest(
 
     if response.status.as_u16() == 404 {
         // コンテストは存在するが未開始か、そもそも存在しないかを区別する（設計 §3.2）。
+        //
+        // どちらでも何も作らない。問題 URL もサンプルも取れない段階で src/bin だけ
+        // 置いても、開始後にもう一度 `new` を打つことになるので得が無い。
         let top = client.get(&format!("https://atcoder.jp/contests/{contest}"))?;
         if top.status.is_success() {
-            ui::warn(&format!(
-                "{contest} はまだ始まっていないようです。\
-                 スケルトンだけ作ります（開始後に `acrust fetch {contest}`）"
-            ));
-            return Ok((Vec::new(), BTreeMap::new()));
+            bail!("コンテスト {contest} はまだ始まっていません");
         }
-        bail!("コンテスト {contest} が見つかりません（{tasks_url} が 404）");
+        bail!("コンテスト {contest} が見つかりません");
     }
     response.error_for_status()?;
 
     let entries = scrape::parse_task_list(&response.body, contest)?;
+    if entries.is_empty() {
+        bail!("{tasks_url} に問題が1問も載っていません");
+    }
     ui::arrow(&format!("{contest}: {} 問", entries.len()));
 
     let print_url = format!("https://atcoder.jp/contests/{contest}/tasks_print");
@@ -187,20 +189,8 @@ fn fetch_each_task(
     Ok(pages)
 }
 
-/// 取れた問題一覧から、無ければ設定の `default-problems` から問題を決める。
-fn problem_specs(config: &LoadedConfig, entries: &[TaskEntry]) -> Vec<ProblemSpec> {
-    if entries.is_empty() {
-        return config
-            .config
-            .contest
-            .default_problems
-            .iter()
-            .map(|alias| ProblemSpec {
-                alias: alias.clone(),
-                screen_name: None,
-            })
-            .collect();
-    }
+/// 取れた問題一覧から、作る問題を決める。
+fn problem_specs(entries: &[TaskEntry]) -> Vec<ProblemSpec> {
     entries
         .iter()
         .map(|entry| ProblemSpec {
