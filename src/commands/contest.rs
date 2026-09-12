@@ -28,7 +28,7 @@ pub fn fetch(contest: Option<String>, overwrite: bool) -> Result<()> {
         Some(contest) => contest,
         None => {
             Package::find()
-                .context("コンテストを指定してください（パッケージの中なら省略できます）")?
+                .context("name a contest (you can omit it inside a package)")?
                 .contest
         }
     };
@@ -40,7 +40,7 @@ fn sync(contest: &str, may_create: bool, overwrite: bool) -> Result<()> {
     let package_dir = config.contest_dir(contest);
     if !may_create && !package_dir.is_dir() {
         bail!(
-            "{} がありません。先に `acrust new {contest}` を実行してください",
+            "{} does not exist. Run `acrust new {contest}` first",
             package_dir.display()
         );
     }
@@ -52,7 +52,7 @@ fn sync(contest: &str, may_create: bool, overwrite: bool) -> Result<()> {
     let (entries, pages) = fetch_contest(&client, contest, &config)?;
     let problems = problem_specs(&entries);
     if problems.is_empty() {
-        bail!("{contest} の問題を1問も決められませんでした");
+        bail!("could not work out a single problem for {contest}");
     }
 
     let mut written = Written::default();
@@ -87,17 +87,17 @@ fn fetch_contest(
         // 置いても、開始後にもう一度 `new` を打つことになるので得が無い。
         let top = client.get(&format!("https://atcoder.jp/contests/{contest}"))?;
         if top.status.is_success() {
-            bail!("コンテスト {contest} はまだ始まっていません");
+            bail!("contest {contest} has not started yet");
         }
-        bail!("コンテスト {contest} が見つかりません");
+        bail!("no such contest: {contest}");
     }
     response.error_for_status()?;
 
     let entries = scrape::parse_task_list(&response.body, contest)?;
     if entries.is_empty() {
-        bail!("{tasks_url} に問題が1問も載っていません");
+        bail!("{tasks_url} lists no problems");
     }
-    ui::arrow(&format!("{contest}: {} 問", entries.len()));
+    ui::arrow(&format!("{contest}: {} problems", entries.len()));
 
     let print_url = format!("https://atcoder.jp/contests/{contest}/tasks_print");
     let printed = client.get(&print_url)?;
@@ -105,13 +105,13 @@ fn fetch_contest(
         match scrape::parse_tasks_print(&printed.body) {
             Ok(pages) => match_pages(&entries, pages),
             Err(e) => {
-                ui::warn(&format!("{print_url} をパースできませんでした: {e}"));
+                ui::warn(&format!("could not parse {print_url}: {e}"));
                 fetch_each_task(client, contest, &entries)?
             }
         }
     } else {
         ui::warn(&format!(
-            "{print_url} が {} を返しました。問題ごとに取得します",
+            "{print_url} returned {}. Falling back to one request per problem",
             printed.status
         ));
         fetch_each_task(client, contest, &entries)?
@@ -124,7 +124,7 @@ fn fetch_contest(
         .collect();
     if !missing.is_empty() {
         ui::warn(&format!(
-            "入出力例を取れなかった問題があります: {}",
+            "could not get the samples for: {}",
             missing.join(", ")
         ));
     }
@@ -154,7 +154,7 @@ fn match_pages(entries: &[TaskEntry], pages: Vec<ProblemPage>) -> BTreeMap<Strin
     }
 
     // ラベルが揃わないときは出現順（`/tasks` と同じ順で並ぶことは確認済み）。
-    ui::warn("見出しのラベルが問題一覧と一致しないため、出現順で対応づけます");
+    ui::warn("the headings do not match the problem list, so matching them in order of appearance");
     entries
         .iter()
         .zip(pages)
@@ -176,14 +176,14 @@ fn fetch_each_task(
         );
         let response = client.get(&url)?;
         if !response.status.is_success() {
-            ui::warn(&format!("{url} が {} を返しました", response.status));
+            ui::warn(&format!("{url} returned {}", response.status));
             continue;
         }
         match scrape::parse_task_page(&response.body) {
             Ok(page) => {
                 pages.insert(entry.alias.clone(), page);
             }
-            Err(e) => ui::warn(&format!("{url} をパースできませんでした: {e}")),
+            Err(e) => ui::warn(&format!("could not parse {url}: {e}")),
         }
     }
     Ok(pages)
@@ -266,7 +266,7 @@ fn write_testcases(
         }
         suite
             .save(&path)
-            .with_context(|| format!("{contest} の {} を書けませんでした", problem.alias))?;
+            .with_context(|| format!("could not write {} for {contest}", problem.alias))?;
         suites.insert(problem.alias.clone(), suite);
     }
     Ok(suites)
@@ -333,26 +333,29 @@ fn report(
     for problem in problems {
         let detail = match (pages.get(&problem.alias), suites.get(&problem.alias)) {
             (Some(page), Some(_)) if page.interactive => {
-                format!("{} — インタラクティブ（テストなし）", page.title)
+                format!("{} - interactive (no sample tests)", page.title)
             }
             (Some(page), Some(suite)) => {
                 let float = match suite.float {
-                    Some(_) => " / 誤差ジャッジ",
+                    Some(_) => " / float judge",
                     None => "",
                 };
-                format!("{} — {} ケース{float}", page.title, suite.cases.len())
+                format!("{} - {} cases{float}", page.title, suite.cases.len())
             }
-            _ => "入出力例なし".to_owned(),
+            _ => "no samples".to_owned(),
         };
         ui::field(&problem.alias, &detail);
     }
 
     ui::info("");
     if written.is_empty() {
-        ui::ok(&format!("{contest}: 変更なし（{}）", package_dir.display()));
+        ui::ok(&format!(
+            "{contest}: nothing changed ({})",
+            package_dir.display()
+        ));
     } else {
         ui::ok(&format!(
-            "{contest}: 作成 {} / 更新 {} / 既存のまま {}（{}）",
+            "{contest}: {} created / {} updated / {} left alone ({})",
             written.created.len(),
             written.updated.len(),
             written.kept.len(),

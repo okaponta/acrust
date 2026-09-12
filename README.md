@@ -1,139 +1,161 @@
 # acrust
 
-**AtCoder × Rust 専用**の競技プログラミング支援ツール。[cargo-compete](https://github.com/qryxip/cargo-compete) の後継として、AtCoder と Rust だけに割り切って作り直したもの。
+English | [日本語](README-ja.md)
+
+A competitive programming CLI **built only for AtCoder and Rust**. A successor to
+[cargo-compete](https://github.com/qryxip/cargo-compete), rebuilt around the idea that giving up
+every other judge and every other language buys you a lot.
 
 ```console
 $ cargo install acrust
-$ acrust login          # ブラウザのセッションクッキーを貼り付ける
+$ acrust login          # paste the session cookie from your browser
 $ acrust new abc474
 $ acrust test a
 $ acrust submit a
 ```
 
-> **状態: 開発中（v0.1 未リリース）**
-> コマンドは一通り実装済みです。crates.io への公開はこれからです（[ロードマップ](#ロードマップ)）。
+> **Status: in development (v0.1 not released yet)**
+> Every command is implemented. Publishing to crates.io is still ahead ([roadmap](#roadmap)).
 
-## なぜ作るか
+## Why
 
-`cargo-compete` は 2024-06 を最後に更新が止まっており、AtCoder のジャッジ環境が更新されるたびに設定を手で追いかける必要があります。acrust はそこを自動化します。
+`cargo-compete` has not been updated since 2024-06, so every time AtCoder refreshes its judge
+environment you have to chase the configuration by hand. acrust automates exactly that.
 
-### 1. ジャッジ環境に自動追従する（最大の差別化）
+### 1. It follows the judge environment on its own (the main difference)
 
-AtCoder は言語アップデートごとに、ジャッジが実際に使う `Cargo.toml` をそのまま含んだインストールスクリプトを公開しています。`acrust env update` はこれを読んで
+With every language update AtCoder publishes an install script that embeds the very `Cargo.toml`
+the judge uses. `acrust env update` reads it and regenerates
 
-- `[dependencies]`（68 クレート、バージョン完全一致）
-- ジャッジと同じ `Cargo.lock`
+- `[dependencies]` (68 crates, versions matched exactly)
+- the same `Cargo.lock` the judge has
 - `edition`
-- **rustc のバージョン**
+- **the rustc version**
 
-を再生成します。`cargo-compete` ではこれらを手で更新する必要があり、実際に「設定は 2023 年の環境のまま」という状態が起きます。
+With `cargo-compete` you update these by hand, which is how repositories end up still configured
+for the 2023 environment.
 
-### 2. ツールチェインもジャッジに固定する
+### 2. It pins the toolchain to the judge too
 
-`acrust init` はリポジトリ直下に `rust-toolchain.toml` を生成し、ジャッジと同じ rustc に固定します。これが無いと `rustup update` を打った瞬間に手元だけ新しい rustc になり、**手元では通りテストも全 AC、提出して初めて CE** という最悪の形で差が出ます。
+`acrust init` writes a `rust-toolchain.toml` at the root of the repository and pins the same rustc
+the judge runs. Without it, one `rustup update` leaves only your machine on a newer rustc, and the
+difference shows up in the worst possible way: **everything builds, every sample is AC, and the
+submission is a CE**.
 
-### 3. `language_id` をハードコードしない
+### 3. It does not hard-code `language_id`
 
-提出ページの `<select name="data.LanguageId">` から `Rust (rustc ...)` を自動で選び、`~/.cache/acrust/` に覚えます。言語アップデートで ID が変わっても壊れません。
+acrust picks `Rust (rustc ...)` off the `<select name="data.LanguageId">` on the submit page and
+remembers it in `~/.cache/acrust/`. A language update that changes the ID does not break it.
 
-実際、cargo-compete が書き込む `5054` に対して、現在の AtCoder が使う ID は **6088** です。ハードコードは既に壊れています。
+For the record: `cargo-compete` writes `5054`, and the ID AtCoder currently uses is **6088**. The
+hard-coded value is already wrong.
 
-### 4. AtCoder に優しい
+### 4. It is polite to AtCoder
 
-- 1 コンテスト分のサンプルを **2 リクエスト**で取得（`/tasks` と `/tasks_print`）
-- リクエスト間隔は最低 1 秒、429 / 5xx は指数バックオフ（`Retry-After` に従う）
-- User-Agent で素性を明示
+- One contest's samples in **two requests** (`/tasks` and `/tasks_print`)
+- At least one second between requests; exponential backoff on 429 / 5xx, honouring `Retry-After`
+- A User-Agent that says who it is
 
-### 5. セッションを 0600 で保存する
+### 5. It stores the session as 0600
 
-AtCoder のセッションクッキーは有効期限が長く、持っていれば本人として提出できるパスワード同等の資格情報です。acrust は `~/.local/share/acrust/session.json` に **0600 で**保存します。パスワードはそもそも受け取りません。パーミッションが緩いファイルを見つけたら警告して直します。
+An AtCoder session cookie is long-lived, and anyone holding it can submit as you: it is as good as
+a password. acrust saves it to `~/.local/share/acrust/session.json` **with mode 0600**, and never
+asks for your password at all. If it finds the file readable by others, it says so and tightens it.
 
-## ログインについて
+## Logging in
 
-AtCoder の `/login` は **Cloudflare Turnstile (CAPTCHA)** で守られているため、ID / パスワードをプログラムから POST してもログインできません（csrf_token が正しくても「エラーが発生しました。」で弾かれます）。CAPTCHA を迂回するのは筋が悪いので、acrust はブラウザで取得済みのセッションクッキーを取り込みます。
+AtCoder's `/login` is behind **Cloudflare Turnstile (CAPTCHA)**, so POSTing an ID and password from
+a program does not log you in — even with a correct `csrf_token` you get "エラーが発生しました。".
+Working around a CAPTCHA is the wrong move, so acrust imports a session cookie you already have in
+your browser.
 
-同じ Turnstile は**コンテスト終了後の提出フォーム**にも付いています（[提出](#提出)を参照）。
+The same Turnstile also guards **the submit form of a contest that has ended** (see
+[Submitting](#submitting)).
 
 ```console
 $ acrust login
 ```
 
-`acrust login` が https://atcoder.jp/login をブラウザで開くので、
+`acrust login` opens https://atcoder.jp/login in your browser, then:
 
-1. ログインする
-2. DevTools を開く
-3. Application（Safari は ストレージ）→ Cookies → `https://atcoder.jp`
-4. `REVEL_SESSION` の Value をコピーして貼り付ける（伏せ字で入力されます）
+1. Log in
+2. Open DevTools
+3. Application (Storage in Safari) -> Cookies -> `https://atcoder.jp`
+4. Copy the Value of `REVEL_SESSION` and paste it (input is hidden)
 
-ブラウザを開きたくないときは `acrust login --no-open`。
+Pass `acrust login --no-open` if you would rather it did not open a browser.
 
-`REVEL_SESSION=...` の形のまま貼っても、Cookie ヘッダを丸ごと貼っても受け付けます。スクリプトから使うときは `acrust login --cookie <値>`。
+Pasting `REVEL_SESSION=...` as-is works, and so does pasting a whole Cookie header. From a script,
+use `acrust login --cookie <value>`.
 
-一度取り込めば有効期限まで（実測で約 180 日）そのまま使えます。
+Once imported it keeps working until it expires (measured at around 180 days).
 
-## コマンド
+## Commands
 
-| コマンド | 説明 |
+| Command | What it does |
 |---|---|
-| `acrust init` | 初期化処理を実施。`.acrust/` と `rust-toolchain.toml` を生成する |
-| `acrust login` / `logout` | AtCoder のセッションを取得・破棄する |
-| `acrust status` | 設定の場所・ジャッジ環境・ログイン状態・いま対象になる問題を表示し、問題がないかを言い切る |
-| `acrust new <contest>` | パッケージを生成し、サンプルを取得する |
-| `acrust fetch [contest]` | サンプルを取得し直す |
-| `acrust test [problem]` | ビルドしてサンプルテストを実行する |
-| `acrust run [problem]` | 標準入力を素通しして実行する |
-| `acrust submit [problem]` | テストしてから提出し、結果を追跡する |
-| `acrust copy [problem]` | 解答をクリップボードにコピーする（手で提出するとき用） |
-| `acrust open [problem]` | ブラウザで問題を開く |
-| `acrust env update` | ジャッジ環境から依存・`Cargo.lock`・`edition`・rustc を再生成する |
-| `acrust migrate` | cargo-compete 形式のリポジトリを acrust 形式へ移行する（往復検証つき・dry-run 既定） |
+| `acrust init` | Initialize. Generates `.acrust/` and `rust-toolchain.toml` |
+| `acrust login` / `logout` | Get or discard the AtCoder session |
+| `acrust status` | Show where the config is, the judge environment, the login state and the current problem, and say whether anything needs doing |
+| `acrust new <contest>` | Create the package and fetch the samples |
+| `acrust fetch [contest]` | Fetch the samples again |
+| `acrust test [problem]` | Build and run the sample tests |
+| `acrust run [problem]` | Run with stdin passed straight through |
+| `acrust submit [problem]` | Test, then submit and follow the result |
+| `acrust copy [problem]` | Copy the solution to the clipboard (for submitting by hand) |
+| `acrust open [problem]` | Open the problem in a browser |
+| `acrust env update` | Regenerate the crates, `Cargo.lock`, `edition` and rustc from the judge environment |
+| `acrust migrate` | Migrate a cargo-compete repository to the acrust layout (round-trip verified, dry-run by default) |
 
-### いまどうなっているか
+### Where things stand
 
 ```console
 $ acrust status
 acrust 0.1.0
 
-  ✓ 設定          /Users/you/repos/atcoder-rust/.acrust/config.toml
-  ✓ ジャッジ環境  2025-10 / edition 2024 / 68 クレート / Cargo.lock あり
-  ✓ rustc         1.89.0（rust-toolchain.toml と一致）
-  ✓ セッション    /Users/you/.local/share/acrust/session.json（600）
-  ✓ ログイン      okaponta
-  ✓ パッケージ    abc474
-  ✓ 問題          c（src/bin/c.rs）
+  ✓ config     /Users/you/repos/atcoder-rust/.acrust/config.toml
+  ✓ judge env  2025-10 / edition 2024 / 68 crates / Cargo.lock present
+  ✓ rustc      1.89.0 (matches rust-toolchain.toml)
+  ✓ session    /Users/you/.local/share/acrust/session.json (600)
+  ✓ login      okaponta
+  ✓ package    abc474
+  ✓ problem    c (src/bin/c.rs)
 
-✓ 異常なし
+✓ all good
 ```
 
-足りないものがあれば、打つべきコマンドをそのまま並べます。
+When something is missing, it lists the commands to run.
 
 ```console
-  ! ジャッジ環境  2025-10 / edition 2024 / 68 クレート / Cargo.lock なし
-  ✗ ログイン      未ログイン
+  ! judge env  2025-10 / edition 2024 / 68 crates / no Cargo.lock
+  ✗ login      not logged in
 
-! やることが 2 つあります
-    acrust env update   ジャッジと同じ Cargo.lock を取得する
-    acrust login        AtCoder にログインする
+! next steps (2)
+    acrust env update   fetch the same Cargo.lock the judge uses
+    acrust login        log in to AtCoder
 ```
 
-AtCoder に問い合わせずローカルの情報だけ見るなら `acrust status --offline`。
+Use `acrust status --offline` to look only at local information, without asking AtCoder.
 
-### `new` / `fetch` が壊さないもの
+### What `new` / `fetch` will not break
 
-取得し直しても手を加えたものは残ります。
+Fetching again keeps everything you touched by hand.
 
-- `src/bin/*.rs` は**絶対に上書きしません**（解答が入っているため）
-- `Cargo.toml` は `toml_edit` で必要な項目だけ足します。手で足した依存もコメントも残ります
-- テストケースは、手で足した `[[cases]]` と手で直した `match` / `[float]` を残し、サンプルだけを更新します
-  （複数解を許す問題で `match = "words"` に直す運用は自動判定では再現できないため）
+- `src/bin/*.rs` is **never overwritten** (your solution lives there)
+- `Cargo.toml` is edited through `toml_edit`, adding only what is missing. Hand-added dependencies
+  and comments survive
+- Test case files keep hand-added `[[cases]]` and a hand-edited `match` / `[float]`, and only the
+  samples are refreshed (for a problem with several valid answers, switching to `match = "words"`
+  is a judgement call no autodetection can reproduce)
 
-まっさらにしたいときは `acrust fetch --overwrite`。
+Use `acrust fetch --overwrite` to go back to a clean slate.
 
-コンテスト開始前に `acrust new` を打つと、まだ始まっていないことを伝えて**何も作りません**。
-問題 URL もサンプルも取れない段階で `src/bin/` だけ置いても、開始後にもう一度打つことに
-なるためです。開始後に `acrust new` を打てば、既にあるものは壊さずに足りないものだけ埋まります。
+Running `acrust new` before a contest starts tells you it has not started and **creates nothing**.
+At that point there is no problem URL and there are no samples, so putting `src/bin/` down would
+only mean running it again later. Run `acrust new` once the contest is live and it fills in what is
+missing without disturbing what is already there.
 
-### テスト
+### Testing
 
 ```console
 $ acrust test a
@@ -144,10 +166,11 @@ $ acrust test a
 ✓ 2/2 AC
 ```
 
-ビルドは1回、ケースの実行は並列（既定で論理コア数）。判定は `AC` / `WA` / `RE` / `TLE`。
-全 AC なら終了コード 0、そうでなければ 1 を返します。
+One build, then the cases run in parallel (one per logical core by default). Verdicts are `AC` /
+`WA` / `RE` / `TLE`. All AC exits 0, anything else exits 1.
 
-失敗したケースは `input` / `expected` / `output` を別々に並べ、食い違う行に `✗` を付けます。
+A failing case lays out `input` / `expected` / `output` separately and marks the differing lines
+with `✗`.
 
 ```console
 ── sample1 WA
@@ -158,22 +181,22 @@ expected:
 ✗ 1  Yes
 output:
 ✗ 1  No
-✗ 2  余計な行
+✗ 2  one line too many
 ```
 
-失敗したケースの中身は**字下げしません**。そのままコピーして使えるようにするためで、
-cargo-compete も同じように左端から出します。
+The body of a failing case is **not indented**, so you can copy it straight out. cargo-compete
+prints it from the left margin for the same reason.
 
-`RE` ではパニックの位置とメッセージを出します（バックトレースは長いので出しません。
-`RUST_BACKTRACE=1` を自分で立てていればそれに従います）。
+For `RE` you get the panic location and message (no backtrace, which is only long — if you have set
+`RUST_BACKTRACE=1` yourself, that is honoured).
 
-打ち切りは問題の TL に `timeout-margin`（既定 1.5）を掛けた値、**ただし最低 5 秒**です。
-手元のマシンはジャッジより遅いことがあり、TL 2 秒 × 1.5 = 3 秒で切ると
-ジャッジでは通る解答を TLE と言ってしまうためです。
+A case is killed at the problem's time limit times `timeout-margin` (1.5 by default), **but never
+sooner than 5 seconds**. Your machine can be slower than the judge, and cutting a 2-second problem
+off at 2 x 1.5 = 3 seconds would call a solution TLE that the judge accepts.
 
-インタラクティブ問題はサンプルテストの形にならないので、その旨を表示してスキップします。
+Interactive problems do not fit the sample-test shape, so acrust says so and skips them.
 
-### 提出
+### Submitting
 
 ```console
 $ acrust submit c
@@ -181,59 +204,67 @@ $ acrust submit c
   AC   sample1      12 ms
   AC   sample2      11 ms
 ✓ 2/2 AC
-  ログイン:      okaponta
-  言語:          Rust (rustc 1.89.0) (id=6088)
-✓ 提出しました  WJ  https://atcoder.jp/contests/abc474/submissions/12345678
+  login:         okaponta
+  language:      Rust (rustc 1.89.0) (id=6088)
+✓ submitted  WJ  https://atcoder.jp/contests/abc474/submissions/12345678
   WJ   2s
   AC   5s           312 ms / 4.2 MB
 ```
 
-> **コンテスト終了後はコマンドから提出できません。**
-> AtCoder は 2025-03 に Cloudflare Turnstile を導入し、**終了したコンテストの提出フォーム**にも
-> これを出すようになりました。隠しフィールド `cf-turnstile-response` はブラウザ上の JS が
-> 差し込むため、素の POST は `csrf_token` が正しくても「エラーが発生しました。」で弾かれます。
-> **コンテスト開催中の提出はこれまでどおり通ります。** acrust は CAPTCHA を迂回しません。
+> **You cannot submit from the command line once a contest has ended.**
+> AtCoder introduced Cloudflare Turnstile in 2025-03 and now puts it on **the submit form of a
+> contest that has finished** as well. The hidden `cf-turnstile-response` field is injected by
+> JavaScript in the browser, so a plain POST is rejected with "エラーが発生しました。" even when
+> `csrf_token` is correct. **Submitting during a live contest still works.** acrust does not work
+> around CAPTCHAs.
 >
-> 終了したコンテストへ提出しようとすると、こう言って止まります。
+> Trying to submit to a finished contest stops like this:
 >
 > ```console
-> warning: コンテストが終了しているため、submitは実行できません。copyを用いて手動で提出をお願いします。
-> error: 提出が受理されませんでした
+> warning: the contest is over, so submit cannot run. Use copy and submit it by hand
+> error: the submission was not accepted
 > ```
 >
-> そのときは [`acrust copy`](#終了したコンテストへ手で提出する) を使ってください。
+> Use [`acrust copy`](#submitting-by-hand-to-a-finished-contest) instead.
 
-### 終了したコンテストへ手で提出する
+### Submitting by hand to a finished contest
 
-`acrust copy` が `src/bin/{alias}.rs` をそのままクリップボードに入れ、貼る先の URL を出します。
+`acrust copy` puts `src/bin/{alias}.rs` on the clipboard as-is and prints where to paste it.
 
 ```console
 $ acrust copy c
   → abc418 c (src/bin/c.rs)
-✓ コピーしました（5 行 / 86 バイト・pbcopy）
+✓ copied (5 lines / 86 bytes, via pbcopy)
 
-貼り付けて提出してください:
+Paste it here to submit:
   https://atcoder.jp/contests/abc418/tasks/abc418_c
-  ブラウザで開くなら `acrust open c`
+  or run `acrust open c` to open it
 ```
 
-`submit` が送るものと**同じバイト列**を載せます（加工しません）。問題を省略すると
-`test` / `submit` と同じく mtime が最新の `src/bin/*.rs` を推定し、対象を必ず表示します。
+It copies **the same bytes** `submit` would send, with no processing. Omit the problem and it infers
+the most recently modified `src/bin/*.rs`, exactly as `test` / `submit` do, and always shows what it
+picked.
 
-コピーには OS 標準のコマンドを使います（macOS は `pbcopy`、Windows は `clip`、
-それ以外は `wl-copy` → `xclip` → `xsel` の順に試す）。クレートを足していないので、
-Linux で X11 / Wayland の開発パッケージを要求することはありません。
+Copying goes through whatever the OS provides (`pbcopy` on macOS, `clip` on Windows, otherwise
+`wl-copy` then `xclip` then `xsel`). No crate was added for it, so nothing here asks you to install
+X11 or Wayland development packages on Linux.
 
-提出するのは常に `src/bin/{alias}.rs` そのもので、差し替え口はありません。「提出したもの = リポジトリの中身」が常に成り立ちます。
+What gets submitted is always `src/bin/{alias}.rs` itself; there is no hook to substitute something
+else. "What was submitted is what is in the repository" always holds.
 
-- 提出前にサンプルテストを通します（`-f` で省略）
-- **問題を省略したときだけ** y/N の確認が入ります。明示指定なら確認なしで即提出します
-- 提出後は結果を追跡します（`--no-watch` で無効化）。間隔は 2 秒から 1.5 倍ずつ、上限 10 秒、1 分で打ち切り。確定したら即やめ、`Retry-After` に従い、連続で失敗したら URL を出して諦めます
-- 追跡には AtCoder のページ自身が使う軽量な API を叩きます（提出一覧ページ 27KB に対して 651 バイト）
+- The sample tests run before submitting (`-f` skips them)
+- A y/N confirmation appears **only when you omit the problem**. Name it and it submits immediately
+- The result is followed afterwards (`--no-watch` turns this off). The interval starts at 2 seconds
+  and grows 1.5x up to 10 seconds, giving up after a minute. It stops the moment the verdict is
+  final, honours `Retry-After`, and prints the URL and gives up after repeated failures
+- Following the result hits the same lightweight API the AtCoder page itself polls (651 bytes,
+  against 27KB for the submissions page)
 
-`test` / `run` は問題を省略すると `src/bin/*.rs` のうち **mtime が最新のもの**を対象にし、選んだ問題を必ず表示します。`submit` は省略時のみ y/N の確認が入ります（誤提出はペナルティが付いて取り消せないため）。
+When you omit the problem, `test` / `run` target the **most recently modified** `src/bin/*.rs` and
+always print which one they chose. `submit` additionally asks y/N in that case, because a
+mis-submission carries a penalty you cannot take back.
 
-## ディレクトリ構成
+## Layout
 
 ```
 atcoder-rust/
@@ -241,93 +272,100 @@ atcoder-rust/
 │   ├── config.toml
 │   └── template/
 │       ├── main.rs
-│       ├── dependencies.toml     # env update が生成
-│       ├── Cargo.lock            # env update が取得
-│       └── copy/                 # new 時にパッケージ直下へコピーされる
+│       ├── dependencies.toml     # generated by env update
+│       ├── Cargo.lock            # fetched by env update
+│       └── copy/                 # copied into the package by new
 ├── .cargo/config.toml            # target-dir = "target"
-├── rust-toolchain.toml           # ジャッジの rustc に固定
+├── rust-toolchain.toml           # pinned to the judge's rustc
 └── abc474/
     ├── Cargo.toml
     ├── src/bin/{a..g}.rs
     └── testcases/{a..g}.toml
 ```
 
-認証情報はリポジトリの外に置きます。
+Credentials live outside the repository.
 
 ```
-~/.local/share/acrust/session.json    # 0600。ACRUST_SESSION_FILE で上書き可
-~/.cache/acrust/                      # キャッシュ
+~/.local/share/acrust/session.json    # 0600; override with ACRUST_SESSION_FILE
+~/.cache/acrust/                      # cache
 ```
 
-## ジャッジ環境への追従
+## Following the judge environment
 
 ```console
 $ acrust env update
 
-  → 言語一覧: https://img.atcoder.jp/file/language-update/2025-10/language-list.html
-  → インストールスクリプト: .../088-1-82-0_rustc.toml
+  → language list: https://img.atcoder.jp/file/language-update/2025-10/language-list.html
+  → install script: .../088-1-82-0_rustc.toml
   → Cargo.lock: https://raw.githubusercontent.com/rust-lang-ja/atcoder-proposal/.../Cargo.lock
 
-── Rust (rustc 1.89.0) との差分
-  rustc:         1.75.0 → 1.89.0
-  edition:       2021 → 2024
-  Cargo.lock:    なし → 1682 行
-  依存クレート:  追加 64 / 削除 0 / 変更 2
+── Difference from Rust (rustc 1.89.0)
+  rustc:         1.75.0 -> 1.89.0
+  edition:       2021 -> 2024
+  Cargo.lock:    none -> 1682 lines
+  crates:        64 added / 0 removed / 2 changed
     ~ itertools =0.11.0 → =0.14.0
     ~ proconio =0.4.5 → =0.5.0
 
-この内容で書き換えますか？ [y/N]:
+Write these changes? [y/N]:
 ```
 
-書き換えるのは `.acrust/template/dependencies.toml`、`.acrust/template/Cargo.lock`、`rust-toolchain.toml`、`.acrust/config.toml` の `edition` です。設定は `toml_edit` で書き換えるのでコメントも書式も残ります。
+It writes `.acrust/template/dependencies.toml`, `.acrust/template/Cargo.lock`,
+`rust-toolchain.toml`, and the `edition` in `.acrust/config.toml`. The config goes through
+`toml_edit`, so comments and formatting survive.
 
-新しい言語アップデートが出たら `acrust env update --language-list <URL>` でその URL を指すと、以後は設定に覚えます。
+When a new language update lands, point at it with `acrust env update --language-list <URL>` and
+acrust remembers the URL from then on.
 
-## cargo-compete からの移行
+## Migrating from cargo-compete
 
-`acrust migrate` が一度きりの変換を行います。dry-run が既定で、`--write` を付けて初めて書き込みます。実行前にクリーンな working tree を要求します（`--allow-dirty` で回避可）。
+`acrust migrate` performs a one-time conversion. Dry-run is the default; nothing is written until
+you pass `--write`. It requires a clean working tree (`--allow-dirty` to bypass that).
 
-変換前に **往復検証**を行い、1 件でも不一致があれば何も書かずに中断します。
+Before converting it **verifies the round trip**, and stops without writing anything if even one
+item does not match.
 
-- 移行後のメタデータから再構成した問題 URL が、移行前の全 bin と文字列一致すること
-- 変換後の TOML から読み直した入出力が、変換前の YAML とバイト単位で一致すること
+- The problem URL rebuilt from the migrated metadata matches every pre-migration bin, as a string
+- The input and output read back from the converted TOML match the original YAML, byte for byte
 
-cargo-compete 形式を読むのは `acrust migrate` の中だけです。`test` や `submit` は acrust 形式しか見ないので、互換のためのコードがツール全体に散らばりません。
+Reading the cargo-compete layout happens only inside `acrust migrate`. `test` and `submit` know
+nothing but the acrust layout, so compatibility code does not spread across the tool.
 
 ```console
 $ acrust migrate
 
-  対象:          /Users/you/repos/atcoder-rust
+  target:        /Users/you/repos/atcoder-rust
 
-── 移行の内容
-  パッケージ:    426 個
-  bin:           2716 本
-  テストケース:  2716 ファイル / 7534 ケース
+── What will be migrated
+  packages:      426
+  bins:          2716
+  test cases:    2716 files / 7534 cases
 
-これは下見です。実際に書き換えるには --write を付けてください
+This was a dry run. Pass --write to actually change things
 ```
 
-## 範囲外
+## Out of scope
 
-acrust は「AtCoder とのやり取り + ビルド/テスト」に専念します。以下は**意図的に**作りません。
+acrust sticks to "talk to AtCoder, then build and test". The following are left out **on purpose**.
 
-- git 操作（コミット・push）、記事テンプレの生成、hooks 機構
-- 自作ライブラリのバンドル（cargo-equip 相当）。`submit` は常に `src/bin/{alias}.rs` をそのまま提出します（「提出したもの = リポジトリの中身」を不変条件にするため）
-- AtCoder 以外のジャッジ、Rust 以外の言語
+- git operations (committing, pushing), article templates, a hooks mechanism
+- Bundling your own library (what cargo-equip does). `submit` always sends `src/bin/{alias}.rs`
+  as-is, to keep "what was submitted is what is in the repository" an invariant
+- Judges other than AtCoder, languages other than Rust
 
-## ロードマップ
+## Roadmap
 
-| | 内容 | 状態 |
+| | Contents | Status |
 |---|---|---|
-| M0 | CLI の骨組み、`config.toml` の読み込み、パッケージ・問題解決、`init` | ✅ |
-| M1 | `login` / `logout` / `status`、セッションの永続化 | ✅ |
-| M2 | `new` / `fetch`（`/tasks` と `/tasks_print` のパース、testcases TOML 生成） | ✅ |
-| M3 | `test`（ビルド・並列実行・TL・判定・差分表示） | ✅ |
-| M4 | `run` / `submit`（言語 ID 自動判定、結果追跡） | ✅ |
-| M5 | `env update`、`open`、`migrate` | ✅ |
-| M6 | crates.io / GitHub Releases での公開 | リリースワークフローと `cargo publish --dry-run` は済み。公開はこれから |
+| M0 | CLI skeleton, reading `config.toml`, resolving packages and problems, `init` | ✅ |
+| M1 | `login` / `logout` / `status`, persisting the session | ✅ |
+| M2 | `new` / `fetch` (parsing `/tasks` and `/tasks_print`, generating the testcases TOML) | ✅ |
+| M3 | `test` (build, parallel run, time limit, judging, diff display) | ✅ |
+| M4 | `run` / `submit` (language ID detection, following the result) | ✅ |
+| M5 | `env update`, `open`, `migrate` | ✅ |
+| M6 | Publishing on crates.io and GitHub Releases | The release workflow and `cargo publish --dry-run` are done; publishing is still ahead |
 
-## 開発
+## Development
 
 ```console
 $ cargo fmt --all --check
@@ -335,27 +373,33 @@ $ cargo clippy --all-targets --all-features -- -D warnings
 $ cargo test
 ```
 
-リポジトリの外に依存するテストは `live` feature で切り離してあります。
-普段の `cargo test` ではビルドもされないので、結果に `ignored` が並びません。
+Tests that depend on anything outside the repository are split off behind the `live` feature. A
+plain `cargo test` does not even build them, so no `ignored` lines show up in the results.
 
 ```console
-# AtCoder に実際にアクセスする
+# actually talks to AtCoder
 $ cargo test --features live --test network -- --test-threads=1
 
-# 手元の実リポジトリの実データと突き合わせる
+# checks against real data in a local repository
 $ cargo test --features live --test acceptance_abc418 -- --nocapture
 ```
 
-テストの fixture に **AtCoder の問題文を含めないでください**。問題文の著作権は AtCoder と作問者にあります。パーサのテストに必要なのは HTML の構造だけなので、構造を再現した合成 HTML を使います。
+**Do not put AtCoder problem statements in test fixtures.** They are copyrighted by AtCoder and the
+problem setters. A parser test only needs the shape of the HTML, so use synthetic HTML that
+reproduces the structure.
 
-## 謝辞
+## Acknowledgements
 
-- [qryxip/cargo-compete](https://github.com/qryxip/cargo-compete) と [qryxip/snowchains](https://github.com/qryxip/snowchains) — 長らくお世話になりました。acrust の設計はこの2つが解いた問題を出発点にしています
-- [tanakh/cargo-atcoder](https://github.com/tanakh/cargo-atcoder) — Rust 専用 AtCoder ツールの先行事例
-- [online-judge-tools/api-client](https://github.com/online-judge-tools/api-client) — AtCoder の HTTP 仕様の参考にしました
+- [qryxip/cargo-compete](https://github.com/qryxip/cargo-compete) and
+  [qryxip/snowchains](https://github.com/qryxip/snowchains) — they served me well for years. The
+  design of acrust starts from the problems those two solved
+- [tanakh/cargo-atcoder](https://github.com/tanakh/cargo-atcoder) — prior art for a Rust-only
+  AtCoder tool
+- [online-judge-tools/api-client](https://github.com/online-judge-tools/api-client) — a reference
+  for AtCoder's HTTP behaviour
 
-コードは持ち込んでおらず、テストケース形式も独自のものです。
+No code was taken from any of them, and the test case format is acrust's own.
 
-## ライセンス
+## License
 
-`MIT OR Apache-2.0`（[LICENSE-MIT](LICENSE-MIT) / [LICENSE-APACHE](LICENSE-APACHE)）
+`MIT OR Apache-2.0` ([LICENSE-MIT](LICENSE-MIT) / [LICENSE-APACHE](LICENSE-APACHE))

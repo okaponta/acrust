@@ -33,7 +33,7 @@ pub fn copy(text: &str) -> Result<&'static str> {
     }
     let tried: Vec<&str> = candidates().iter().map(|(command, _)| *command).collect();
     bail!(
-        "クリップボードにコピーできませんでした（{} のいずれも見つかりません）",
+        "could not copy to the clipboard (none of {} were found)",
         tried.join(" / ")
     )
 }
@@ -50,22 +50,22 @@ fn run(command: &str, args: &[&str], text: &str) -> Result<bool> {
         Ok(child) => child,
         // 入っていないだけなら次の候補へ。
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(e).with_context(|| format!("{command} を起動できませんでした")),
+        Err(e) => return Err(e).with_context(|| format!("could not start {command}")),
     };
 
     {
-        let mut stdin = child.stdin.take().context("標準入力を掴めませんでした")?;
+        let mut stdin = child.stdin.take().context("could not take stdin")?;
         stdin
             .write_all(text.as_bytes())
-            .with_context(|| format!("{command} に書き込めませんでした"))?;
+            .with_context(|| format!("could not write to {command}"))?;
         // ここで drop されて EOF が伝わる。閉じないと相手が読み終わらない。
     }
 
     let status = child
         .wait()
-        .with_context(|| format!("{command} の終了を待てませんでした"))?;
+        .with_context(|| format!("could not wait for {command} to finish"))?;
     if !status.success() {
-        bail!("{command} が {status} で終了しました");
+        bail!("{command} exited with {status}");
     }
     Ok(true)
 }

@@ -40,7 +40,7 @@ pub fn render_manifest(
         .collect();
     if !tasks.is_empty() {
         out.push_str(
-            "\n# 問題URLは alias から導けない（abc042 の c は arc058_a）。消さないこと。\n",
+            "\n# The problem URL cannot be derived from the alias (c in abc042 is arc058_a). Keep this.\n",
         );
         out.push_str("[package.metadata.acrust.tasks]\n");
         for (alias, screen_name) in &tasks {
@@ -94,9 +94,9 @@ pub fn bin_name(contest: &str, alias: &str) -> String {
 /// 設定の `[package] profile`（`[dev]` 始まりの生 TOML）を `[profile.dev]` に直す。
 fn render_profile(profile: &str) -> Result<String> {
     let table: toml::Table =
-        toml::from_str(profile).context("[package] profile が TOML として読めません")?;
+        toml::from_str(profile).context("[package] profile is not valid TOML")?;
     let wrapped = toml::Table::from_iter([("profile".to_owned(), toml::Value::Table(table))]);
-    toml::to_string(&wrapped).context("[profile] を組み立てられませんでした")
+    toml::to_string(&wrapped).context("could not build [profile]")
 }
 
 /// alias は英数字だけなので裸のキーで書けるが、念のため確認する。
@@ -163,9 +163,9 @@ fn copy_dir_recursive(
     package_dir: &Path,
     written: &mut Written,
 ) -> Result<()> {
-    std::fs::create_dir_all(to).with_context(|| format!("{} を作れませんでした", to.display()))?;
-    let entries = std::fs::read_dir(from)
-        .with_context(|| format!("{} を読めませんでした", from.display()))?;
+    std::fs::create_dir_all(to).with_context(|| format!("could not create {}", to.display()))?;
+    let entries =
+        std::fs::read_dir(from).with_context(|| format!("could not read {}", from.display()))?;
     for entry in entries {
         let entry = entry?;
         let source = entry.path();
@@ -177,7 +177,7 @@ fn copy_dir_recursive(
         } else {
             std::fs::copy(&source, &destination).with_context(|| {
                 format!(
-                    "{} を {} にコピーできませんでした",
+                    "could not copy {} to {}",
                     source.display(),
                     destination.display()
                 )
@@ -202,13 +202,13 @@ pub fn copy_cargo_lock(
     }
     if !source.is_file() {
         crate::ui::warn(&format!(
-            "{} がありません。`acrust env update` でジャッジと同じ Cargo.lock を取得してください",
+            "{} is missing. Run `acrust env update` to get the same Cargo.lock the judge uses",
             source.display()
         ));
         return Ok(());
     }
     std::fs::copy(&source, &destination)
-        .with_context(|| format!("{} を置けませんでした", destination.display()))?;
+        .with_context(|| format!("could not put {} in place", destination.display()))?;
     written.created.push("Cargo.lock".to_owned());
     Ok(())
 }
@@ -216,9 +216,9 @@ pub fn copy_cargo_lock(
 pub fn write_new_file(path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .with_context(|| format!("{} を作れませんでした", parent.display()))?;
+            .with_context(|| format!("could not create {}", parent.display()))?;
     }
-    std::fs::write(path, contents).with_context(|| format!("{} に書けませんでした", path.display()))
+    std::fs::write(path, contents).with_context(|| format!("could not write {}", path.display()))
 }
 
 pub fn relative(base: &Path, path: &Path) -> String {
@@ -233,11 +233,11 @@ pub fn read_dependencies(config: &LoadedConfig) -> Result<String> {
     let path = config.template_dependencies();
     if !path.is_file() {
         bail!(
-            "{} がありません。`acrust init` か `acrust env update` を実行してください",
+            "{} is missing. Run `acrust init` or `acrust env update`",
             path.display()
         );
     }
-    std::fs::read_to_string(&path).with_context(|| format!("{} を読めませんでした", path.display()))
+    std::fs::read_to_string(&path).with_context(|| format!("could not read {}", path.display()))
 }
 
 /// テンプレートの `main.rs` を読む。無ければ空のテンプレートで代用する。
@@ -245,12 +245,12 @@ pub fn read_template_source(config: &LoadedConfig) -> Result<String> {
     let path = config.template_src();
     if !path.is_file() {
         crate::ui::warn(&format!(
-            "{} がありません。空の main() で作ります",
+            "{} is missing, so using an empty main()",
             path.display()
         ));
         return Ok("fn main() {\n}\n".to_owned());
     }
-    std::fs::read_to_string(&path).with_context(|| format!("{} を読めませんでした", path.display()))
+    std::fs::read_to_string(&path).with_context(|| format!("could not read {}", path.display()))
 }
 
 pub fn manifest_path(package_dir: &Path) -> PathBuf {

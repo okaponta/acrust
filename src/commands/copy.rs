@@ -28,24 +28,24 @@ pub fn run(problem: Option<String>) -> Result<()> {
     ui::arrow(&resolved.describe(&package));
 
     let source = std::fs::read_to_string(&resolved.bin.src_path)
-        .with_context(|| format!("{} を読めませんでした", resolved.bin.src_path.display()))?;
+        .with_context(|| format!("could not read {}", resolved.bin.src_path.display()))?;
     if source.trim().is_empty() {
-        bail!("{} が空です", resolved.bin.src_path.display());
+        bail!("{} is empty", resolved.bin.src_path.display());
     }
 
     let via = clipboard::copy(&source)?;
     ui::ok(&format!(
-        "コピーしました（{} 行 / {} バイト・{via}）",
+        "copied ({} lines / {} bytes, via {via})",
         source.lines().count(),
         source.len()
     ));
 
     let task = package.task_url(&resolved.bin.alias)?;
     ui::info("");
-    ui::info("貼り付けて提出してください:");
+    ui::info("Paste it here to submit:");
     ui::info(&format!("  {task}"));
     ui::info(&format!(
-        "  ブラウザで開くなら `acrust open {}`",
+        "  or run `acrust open {}` to open it",
         resolved.bin.alias
     ));
     Ok(())

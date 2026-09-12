@@ -1,3 +1,4 @@
 [build]
-# target をリポジトリ全体で共有する。依存クレートのビルドが全コンテストで償却される。
+# Share one target dir across the repository, so building the dependencies
+# is paid for once and amortized over every contest.
 target-dir = "target"

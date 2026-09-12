@@ -42,8 +42,8 @@ impl Package {
             .find(|p| p.is_file())
             .ok_or_else(|| {
                 anyhow!(
-                    "Cargo.toml が見つかりません（{} から上に辿って探しました）。\
-                     コンテストのディレクトリの中で実行してください",
+                    "Cargo.toml not found (looked upwards from {}). \
+                     Run this inside a contest directory",
                     start.display()
                 )
             })?;
@@ -51,7 +51,7 @@ impl Package {
     }
 
     pub fn find() -> Result<Self> {
-        let cwd = std::env::current_dir().context("カレントディレクトリを取得できませんでした")?;
+        let cwd = std::env::current_dir().context("could not get the current directory")?;
         Self::find_from(&cwd)
     }
 
@@ -60,10 +60,10 @@ impl Package {
             .manifest_path(manifest_path)
             .no_deps()
             .exec()
-            .with_context(|| format!("{} を読めませんでした", manifest_path.display()))?;
+            .with_context(|| format!("could not read {}", manifest_path.display()))?;
         let package = metadata
             .root_package()
-            .ok_or_else(|| anyhow!("{} にパッケージがありません", manifest_path.display()))?;
+            .ok_or_else(|| anyhow!("{} has no package", manifest_path.display()))?;
 
         let dir = manifest_path
             .parent()
@@ -74,13 +74,13 @@ impl Package {
         if acrust.is_none() {
             if package.metadata.get("cargo-compete").is_some() {
                 bail!(
-                    "{} は cargo-compete 形式のままです。`acrust migrate` を実行してください",
+                    "{} is still in the cargo-compete layout. Run `acrust migrate`",
                     dir.display()
                 );
             }
             bail!(
-                "{} に [package.metadata.acrust] がありません。\
-                 acrust で作ったパッケージではないか、移行がまだです（`acrust migrate`）",
+                "{} has no [package.metadata.acrust]. \
+                 Either acrust did not create it, or it still needs `acrust migrate`",
                 dir.display()
             );
         }
@@ -97,7 +97,7 @@ impl Package {
             for (alias, screen_name) in table {
                 let screen_name = screen_name.as_str().ok_or_else(|| {
                     anyhow!(
-                        "[package.metadata.acrust.tasks] の {alias} が文字列ではありません（{}）",
+                        "{alias} in [package.metadata.acrust.tasks] is not a string ({})",
                         manifest_path.display()
                     )
                 })?;
@@ -164,8 +164,8 @@ impl Package {
     pub fn task_url(&self, alias: &str) -> Result<String> {
         let screen_name = self.tasks.get(alias).ok_or_else(|| {
             anyhow!(
-                "{} の問題 {alias} の task screen name が {} にありません。\
-                 `acrust fetch` でメタデータを補完してください",
+                "{} has no task screen name for problem {alias} in {}. \
+                 Run `acrust fetch` to fill the metadata in",
                 self.contest,
                 self.manifest_path.display()
             )
@@ -212,7 +212,7 @@ pub fn resolve_problem(
     if let Some(query) = query {
         let bin = package.find_bin(query).ok_or_else(|| {
             anyhow!(
-                "問題 {query} が {} にありません。候補: {}",
+                "{} has no problem {query}. Candidates: {}",
                 package.name,
                 aliases(package)
             )
@@ -224,7 +224,7 @@ pub fn resolve_problem(
     }
 
     if package.bins.is_empty() {
-        bail!("{} に bin ターゲットがありません", package.name);
+        bail!("{} has no bin targets", package.name);
     }
     if package.bins.len() == 1 {
         return Ok(Resolved {
@@ -235,11 +235,11 @@ pub fn resolve_problem(
 
     match mode {
         ResolveMode::Never => bail!(
-            "問題を指定してください（[test] resolve = \"never\"）。候補: {}",
+            "name a problem ([test] resolve = \"never\"). Candidates: {}",
             aliases(package)
         ),
         ResolveMode::Single => bail!(
-            "bin が {} 個あるので問題を指定してください（[test] resolve = \"single\"）。候補: {}",
+            "there are {} bins, so name a problem ([test] resolve = \"single\"). Candidates: {}",
             package.bins.len(),
             aliases(package)
         ),
@@ -253,18 +253,16 @@ fn resolve_by_mtime(package: &Package, template_src: Option<&str>) -> Result<Res
     for bin in &package.bins {
         let mtime = std::fs::metadata(&bin.src_path)
             .and_then(|m| m.modified())
-            .with_context(|| {
-                format!("{} の mtime を取得できませんでした", bin.src_path.display())
-            })?;
+            .with_context(|| format!("could not get the mtime of {}", bin.src_path.display()))?;
         let source = std::fs::read_to_string(&bin.src_path)
-            .with_context(|| format!("{} を読めませんでした", bin.src_path.display()))?;
+            .with_context(|| format!("could not read {}", bin.src_path.display()))?;
         stats.push((bin, mtime, source));
     }
 
     if is_freshly_generated(&stats, template_src) {
         bail!(
-            "どの問題を指すか決められません（生成直後で全てテンプレートのままです）。\
-             問題を指定してください。候補: {}",
+            "cannot tell which problem you mean (everything is still the template). \
+             Name one. Candidates: {}",
             aliases(package)
         );
     }
@@ -284,7 +282,7 @@ fn resolve_by_mtime(package: &Package, template_src: Option<&str>) -> Result<Res
     // 誤推定のコストが非対称なので（決定 D7）、決められないときは決められないと言う。
     if newest_bins.len() > 1 {
         bail!(
-            "どの問題を指すか決められません（{} の mtime が同じです）。問題を指定してください",
+            "cannot tell which problem you mean ({} share an mtime). Name one",
             newest_bins
                 .iter()
                 .map(|b| b.alias.as_str())

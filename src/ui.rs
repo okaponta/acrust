@@ -202,10 +202,10 @@ pub fn block_limited(label: &str, text: &str, max_lines: usize) {
         println!("  {line}");
     }
     if lines.len() > max_lines {
-        println!("  …（あと {} 行）", lines.len() - max_lines);
+        println!("  … ({} more lines)", lines.len() - max_lines);
     }
     if text.is_empty() {
-        println!("  （空）");
+        println!("  (empty)");
     }
 }
 
@@ -237,7 +237,7 @@ fn numbered(
 ) {
     println!("{label}:");
     if lines.is_empty() {
-        println!("  （空）");
+        println!("  (empty)");
         return;
     }
 
@@ -248,7 +248,7 @@ fn numbered(
     };
     let end = (start + MAX_BLOCK_LINES).min(lines.len());
     if start > 0 {
-        println!("…（前略 {start} 行）");
+        println!("… ({start} lines above)");
     }
     for i in start..end {
         let line = lines[i];
@@ -267,7 +267,7 @@ fn numbered(
         }
     }
     if end < lines.len() {
-        println!("…（あと {} 行）", lines.len() - end);
+        println!("… ({} more lines)", lines.len() - end);
     }
 }
 

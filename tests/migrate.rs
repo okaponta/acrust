@@ -230,7 +230,7 @@ fn an_unreadable_testcase_stops_everything_before_writing() {
 
     let err = migrate::migrate_at(root, true).unwrap_err().to_string();
     assert!(
-        err.contains("解釈できません") || err.contains("読めませんでした"),
+        err.contains("cannot make sense of") || err.contains("could not read"),
         "{err}"
     );
 

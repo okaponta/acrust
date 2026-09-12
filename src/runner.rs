@@ -44,11 +44,9 @@ pub fn build(manifest_path: &Path, bin: &str, profile: Profile) -> Result<PathBu
         command.arg("--release");
     }
 
-    let output = command
-        .output()
-        .context("cargo build を起動できませんでした")?;
+    let output = command.output().context("could not start cargo build")?;
     if !output.status.success() {
-        bail!("ビルドに失敗しました（{}）", output.status);
+        bail!("the build failed ({})", output.status);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -59,7 +57,7 @@ pub fn build(manifest_path: &Path, bin: &str, profile: Profile) -> Result<PathBu
         .filter_map(|message| message["executable"].as_str().map(PathBuf::from))
         .next_back();
 
-    executable.with_context(|| format!("cargo build が {bin} の実行ファイルを報告しませんでした"))
+    executable.with_context(|| format!("cargo build did not report an executable for {bin}"))
 }
 
 /// ケースを並列に実行する。`jobs` が 0 なら論理コア数。
@@ -170,7 +168,7 @@ fn run_case(
             elapsed: started.elapsed(),
             stdout: String::new(),
             stderr: format!("{e:#}"),
-            status: Some("起動できませんでした".to_owned()),
+            status: Some("could not start it".to_owned()),
         },
     }
 }
@@ -205,9 +203,9 @@ fn execute(executable: &Path, input: &str, timeout: Duration) -> Result<Run> {
         .stderr(Stdio::piped())
         .envs(backtrace_env())
         .spawn()
-        .with_context(|| format!("{} を起動できませんでした", executable.display()))?;
+        .with_context(|| format!("could not start {}", executable.display()))?;
 
-    let mut stdin = child.stdin.take().context("標準入力を掴めませんでした")?;
+    let mut stdin = child.stdin.take().context("could not take stdin")?;
     let payload = input.to_owned();
     let writer = std::thread::spawn(move || {
         // 相手が先に終了して EPIPE になるのは異常ではない（入力を読み切らない解答）。
@@ -216,24 +214,21 @@ fn execute(executable: &Path, input: &str, timeout: Duration) -> Result<Run> {
         // ここで drop されて EOF が伝わる。
     });
 
-    let mut stdout = child.stdout.take().context("標準出力を掴めませんでした")?;
+    let mut stdout = child.stdout.take().context("could not take stdout")?;
     let stdout_reader = std::thread::spawn(move || {
         let mut buffer = Vec::new();
         let _ = stdout.read_to_end(&mut buffer);
         buffer
     });
-    let mut stderr = child
-        .stderr
-        .take()
-        .context("標準エラーを掴めませんでした")?;
+    let mut stderr = child.stderr.take().context("could not take stderr")?;
     let stderr_reader = std::thread::spawn(move || {
         let mut buffer = Vec::new();
         let _ = stderr.read_to_end(&mut buffer);
         buffer
     });
 
-    let waited =
-        wait_with_timeout(&mut child, timeout).context("プロセスの終了を待てませんでした")?;
+    let waited = wait_with_timeout(&mut child, timeout)
+        .context("could not wait for the process to finish")?;
     let timed_out = waited.is_none();
     let status = match waited {
         Some(status) => Some(status),
@@ -252,7 +247,7 @@ fn execute(executable: &Path, input: &str, timeout: Duration) -> Result<Run> {
         (true, _) => None,
         (false, Some(status)) if status.success() => None,
         (false, Some(status)) => Some(describe(&status)),
-        (false, None) => Some("終了状態を取得できませんでした".to_owned()),
+        (false, None) => Some("could not get the exit status".to_owned()),
     };
 
     Ok(Run {
@@ -293,17 +288,17 @@ fn wait_with_timeout(child: &mut Child, timeout: Duration) -> std::io::Result<Op
 fn describe(status: &std::process::ExitStatus) -> String {
     use std::os::unix::process::ExitStatusExt as _;
     match (status.code(), status.signal()) {
-        (Some(code), _) => format!("終了コード {code}"),
-        (None, Some(signal)) => format!("シグナル {signal} で終了"),
-        (None, None) => "異常終了".to_owned(),
+        (Some(code), _) => format!("exit code {code}"),
+        (None, Some(signal)) => format!("killed by signal {signal}"),
+        (None, None) => "abnormal exit".to_owned(),
     }
 }
 
 #[cfg(not(unix))]
 fn describe(status: &std::process::ExitStatus) -> String {
     match status.code() {
-        Some(code) => format!("終了コード {code}"),
-        None => "異常終了".to_owned(),
+        Some(code) => format!("exit code {code}"),
+        None => "abnormal exit".to_owned(),
     }
 }
 

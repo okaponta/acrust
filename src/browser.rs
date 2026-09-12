@@ -14,9 +14,9 @@ pub fn open(url: &str) -> Result<()> {
     let status = std::process::Command::new(command)
         .arg(url)
         .status()
-        .with_context(|| format!("{command} を起動できませんでした"))?;
+        .with_context(|| format!("could not start {command}"))?;
     if !status.success() {
-        bail!("{command} が {status} で終了しました");
+        bail!("{command} exited with {status}");
     }
     Ok(())
 }

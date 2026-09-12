@@ -10,7 +10,7 @@ use std::process::ExitCode;
 #[command(
     name = "acrust",
     version,
-    about = "AtCoder × Rust 専用の競技プログラミング支援ツール"
+    about = "A competitive programming CLI built only for AtCoder and Rust"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -19,92 +19,92 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// AtCoder にログインする（ブラウザのセッションクッキーを取り込む）
+    /// Log in to AtCoder (imports the session cookie from your browser)
     Login {
-        /// REVEL_SESSION の値。省略時は対話入力（伏せ字）
+        /// The REVEL_SESSION value. Prompts for it (hidden) when omitted
         #[arg(long, value_name = "REVEL_SESSION")]
         cookie: Option<String>,
-        /// AtCoder のページをブラウザで開かない
+        /// Do not open AtCoder in a browser
         #[arg(long)]
         no_open: bool,
     },
-    /// 保存済みのセッションを破棄する
+    /// Discard the saved session
     Logout,
-    /// ログイン状態・設定の場所・ジャッジ環境のバージョンを表示する
+    /// Show the login state, where the config lives, and the judge environment
     Status {
-        /// AtCoder に問い合わせずローカルの情報だけを表示する
+        /// Show only local information, without asking AtCoder
         #[arg(long)]
         offline: bool,
     },
-    /// 初期化処理を実施。.acrust/ と rust-toolchain.toml を生成する
+    /// Initialize. Generates .acrust/ and rust-toolchain.toml
     Init {
-        /// 対象ディレクトリ（既定: カレントディレクトリ）
+        /// Target directory (default: the current directory)
         #[arg(long, value_name = "DIR")]
         path: Option<PathBuf>,
-        /// 既存のファイルを上書きする
+        /// Overwrite existing files
         #[arg(long)]
         force: bool,
     },
-    /// cargo-compete 形式のリポジトリを acrust 形式へ移行する
+    /// Migrate a cargo-compete repository to the acrust layout
     Migrate {
-        /// 実際に書き込む（既定は dry-run）
+        /// Actually write (dry-run by default)
         #[arg(long)]
         write: bool,
-        /// git の working tree が汚れていても実行する
+        /// Run even when the git working tree is dirty
         #[arg(long)]
         allow_dirty: bool,
     },
-    /// コンテストのパッケージを作り、サンプルを取得する
+    /// Create the package for a contest and fetch its samples
     New {
-        /// コンテスト ID（例: abc474）
+        /// Contest ID (e.g. abc474)
         contest: String,
     },
-    /// サンプルを取得し直す
+    /// Fetch the samples again
     Fetch {
-        /// コンテスト ID（省略時はカレントのパッケージ）
+        /// Contest ID (defaults to the current package)
         contest: Option<String>,
-        /// 手で足したケースや手で直した match を残さず、取得した内容で置き換える
+        /// Replace everything with what was fetched, dropping hand-added cases and hand-edited match
         #[arg(long)]
         overwrite: bool,
     },
-    /// ビルドしてサンプルテストを実行する
+    /// Build and run the sample tests
     Test {
-        /// 問題（例: a）。省略時は mtime が最新のものを推定する
+        /// Problem (e.g. a). Defaults to the most recently modified one
         problem: Option<String>,
-        /// release プロファイルでビルドする
+        /// Build with the release profile
         #[arg(long)]
         release: bool,
     },
-    /// 標準入力を素通しして実行する
+    /// Run the solution with stdin passed straight through
     Run {
-        /// 問題（例: a）。省略時は mtime が最新のものを推定する
+        /// Problem (e.g. a). Defaults to the most recently modified one
         problem: Option<String>,
-        /// release プロファイルでビルドする
+        /// Build with the release profile
         #[arg(long)]
         release: bool,
     },
-    /// テストしてから提出し、結果を追跡する
+    /// Test, then submit and follow the result
     Submit {
-        /// 問題（例: a）。省略時は推定し、y/N の確認を入れる
+        /// Problem (e.g. a). Inferred with a y/N confirmation when omitted
         problem: Option<String>,
-        /// 提出前のテストをスキップする
+        /// Skip the sample tests before submitting
         #[arg(short, long)]
         force: bool,
-        /// 提出後の結果追跡をしない
+        /// Do not follow the result after submitting
         #[arg(long)]
         no_watch: bool,
     },
-    /// 解答をクリップボードにコピーする
+    /// Copy the solution to the clipboard
     Copy {
-        /// 問題（例: a）。省略時は mtime が最新のものを推定する
+        /// Problem (e.g. a). Defaults to the most recently modified one
         problem: Option<String>,
     },
-    /// ブラウザで問題を開く
+    /// Open the problem in a browser
     Open {
-        /// 問題（例: a）。省略時は全問
+        /// Problem (e.g. a). Defaults to every problem
         problem: Option<String>,
     },
-    /// AtCoder のジャッジ環境に追従する
+    /// Keep up with AtCoder's judge environment
     Env {
         #[command(subcommand)]
         command: EnvCommand,
@@ -113,12 +113,12 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum EnvCommand {
-    /// ジャッジが使っている rustc・edition・依存クレートを調べて、設定を合わせる
+    /// Look up the rustc, edition and crates the judge uses, and match the config to them
     Update {
-        /// 言語一覧ページの URL（新しい言語アップデートを指すときに使う）
+        /// URL of the language list page (use it to point at a newer language update)
         #[arg(long, value_name = "URL")]
         language_list: Option<String>,
-        /// 確認せずに書き換える
+        /// Write without asking
         #[arg(long)]
         yes: bool,
     },

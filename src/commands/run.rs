@@ -38,7 +38,7 @@ pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
         .stderr(Stdio::inherit())
         .env("RUST_BACKTRACE", "1")
         .status()
-        .with_context(|| format!("{} を起動できませんでした", executable.display()))?;
+        .with_context(|| format!("could not start {}", executable.display()))?;
 
     if status.success() {
         Ok(ExitCode::SUCCESS)

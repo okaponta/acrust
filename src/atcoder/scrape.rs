@@ -105,7 +105,7 @@ pub fn parse_task_list(html_text: &str, contest: &str) -> Result<Vec<TaskEntry>>
 
     if entries.is_empty() {
         return Err(anyhow!(
-            "問題一覧を取り出せませんでした（{contest}）。AtCoder の HTML が変わった可能性があります"
+            "could not pull out the problem list for {contest}. AtCoder's HTML may have changed"
         ));
     }
     Ok(entries)
@@ -128,7 +128,7 @@ pub fn parse_tasks_print(html_text: &str) -> Result<Vec<ProblemPage>> {
 
     if problems.is_empty() {
         return Err(anyhow!(
-            "入出力例を1問も取り出せませんでした。AtCoder の HTML が変わった可能性があります"
+            "could not pull out samples for a single problem. AtCoder's HTML may have changed"
         ));
     }
     Ok(problems)
@@ -141,7 +141,7 @@ pub fn parse_task_page(html_text: &str) -> Result<ProblemPage> {
     document
         .select(&container)
         .find(|element| element.select(&selector("span.h2")).next().is_some())
-        .ok_or_else(|| anyhow!("問題ページの構造を認識できませんでした"))
+        .ok_or_else(|| anyhow!("could not recognise the structure of the problem page"))
         .and_then(|element| parse_problem_element(element))
 }
 
@@ -149,7 +149,7 @@ fn parse_problem_element(element: ElementRef) -> Result<ProblemPage> {
     let heading = element
         .select(&selector("span.h2"))
         .next()
-        .ok_or_else(|| anyhow!("問題の見出しが見つかりません"))?;
+        .ok_or_else(|| anyhow!("could not find the problem heading"))?;
     // 個別ページの見出しには Editorial へのリンクがぶら下がるので、直下のテキストだけを使う。
     let heading_text = direct_text_of(heading);
     let (label, title) = split_heading(&heading_text);

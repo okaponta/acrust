@@ -326,11 +326,11 @@ impl Default for Config {
 
 impl Config {
     pub fn parse(s: &str) -> Result<Self> {
-        let config: Config = toml::from_str(s).context("config.toml のパースに失敗しました")?;
+        let config: Config = toml::from_str(s).context("could not parse config.toml")?;
         if config.version > SUPPORTED_VERSION {
             bail!(
-                "config.toml の version = {} は、この acrust ({}) が理解できる version = {} より新しいです。\
-                 acrust を更新してください",
+                "config.toml has version = {}, which is newer than the version = {} this acrust ({}) understands. \
+                 Update acrust",
                 config.version,
                 env!("CARGO_PKG_VERSION"),
                 SUPPORTED_VERSION
@@ -355,8 +355,8 @@ impl LoadedConfig {
     pub fn find_from(start: &Path) -> Result<Self> {
         let root = find_root(start).with_context(|| {
             format!(
-                "{}/{} が見つかりません（{} から上に辿って探しました）。\
-                 リポジトリのルートで `acrust init` を実行してください",
+                "{}/{} not found (looked upwards from {}). \
+                 Run `acrust init` at the root of your repository",
                 CONFIG_DIR,
                 CONFIG_FILE,
                 start.display()
@@ -367,16 +367,16 @@ impl LoadedConfig {
 
     /// 現在のディレクトリから探す。
     pub fn find() -> Result<Self> {
-        let cwd = std::env::current_dir().context("カレントディレクトリを取得できませんでした")?;
+        let cwd = std::env::current_dir().context("could not get the current directory")?;
         Self::find_from(&cwd)
     }
 
     pub fn load(root: &Path) -> Result<Self> {
         let path = config_path(root);
         let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("{} を読めませんでした", path.display()))?;
-        let config = Config::parse(&text)
-            .with_context(|| format!("{} の読み込みに失敗しました", path.display()))?;
+            .with_context(|| format!("could not read {}", path.display()))?;
+        let config =
+            Config::parse(&text).with_context(|| format!("could not load {}", path.display()))?;
         Ok(Self {
             root: root.to_path_buf(),
             path,
@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn rejects_a_newer_config_version() {
         let err = Config::parse("version = 99").unwrap_err().to_string();
-        assert!(err.contains("acrust を更新してください"), "{err}");
+        assert!(err.contains("Update acrust"), "{err}");
     }
 
     #[test]

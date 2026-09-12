@@ -18,16 +18,16 @@ const CARGO_CONFIG: &str = include_str!("../../assets/cargo-config.toml");
 pub fn run(path: Option<PathBuf>, force: bool) -> Result<()> {
     let root = match path {
         Some(path) => path,
-        None => std::env::current_dir().context("カレントディレクトリを取得できませんでした")?,
+        None => std::env::current_dir().context("could not get the current directory")?,
     };
-    let root = std::fs::canonicalize(&root)
-        .with_context(|| format!("{} が見つかりません", root.display()))?;
+    let root =
+        std::fs::canonicalize(&root).with_context(|| format!("{} not found", root.display()))?;
 
     if !force {
         if let Some(existing) = config::find_root(&root) {
             bail!(
-                "{} は既に acrust の管理下です（{}）。\
-                 上書きするなら --force を付けてください",
+                "{} is already managed by acrust ({}). \
+                 Pass --force to overwrite it",
                 root.display(),
                 config::config_path(&existing).display()
             );
@@ -39,7 +39,7 @@ pub fn run(path: Option<PathBuf>, force: bool) -> Result<()> {
     let mut write = |relative: &str, contents: &str| -> Result<()> {
         let path = root.join(relative);
         if path.exists() && !force {
-            ui::field("skip", &format!("{relative}（既にあります）"));
+            ui::field("skip", &format!("{relative} (already there)"));
             skipped += 1;
             return Ok(());
         }
@@ -70,21 +70,21 @@ pub fn run(path: Option<PathBuf>, force: bool) -> Result<()> {
 
     ui::info("");
     ui::ok(&format!(
-        "{} を acrust の管理下にしました（作成 {written} / スキップ {skipped}）",
+        "{} is now managed by acrust ({written} created / {skipped} skipped)",
         root.display()
     ));
     ui::info("");
-    ui::info("次にやること:");
+    ui::info("Next:");
     ui::info(crate::commands::NEXT_ENV_UPDATE);
-    ui::info("  acrust login        # AtCoder にログインする");
-    ui::info("  acrust new abc474   # コンテストのパッケージを作る");
+    ui::info("  acrust login        # log in to AtCoder");
+    ui::info("  acrust new abc474   # create the package for a contest");
     Ok(())
 }
 
 /// ジャッジと同じ rustc に固定する（決定 D11）。
 pub fn rust_toolchain_toml(channel: &str) -> String {
     format!(
-        "# AtCoder のジャッジと同じ rustc に固定する。`acrust env update` が追従させる。\n\
+        "# Pinned to the same rustc AtCoder's judge uses. `acrust env update` keeps it in step.\n\
          [toolchain]\n\
          channel = \"{channel}\"\n\
          components = [\"rustfmt\", \"clippy\"]\n"
@@ -94,9 +94,9 @@ pub fn rust_toolchain_toml(channel: &str) -> String {
 fn write_file(path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .with_context(|| format!("{} を作れませんでした", parent.display()))?;
+            .with_context(|| format!("could not create {}", parent.display()))?;
     }
-    std::fs::write(path, contents).with_context(|| format!("{} に書けませんでした", path.display()))
+    std::fs::write(path, contents).with_context(|| format!("could not write {}", path.display()))
 }
 
 /// 埋め込んだ既定の設定。`env update`（M5）が現行値との diff に使う。

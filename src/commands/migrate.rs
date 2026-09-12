@@ -20,7 +20,7 @@ const COMPETE_FILE: &str = "compete.toml";
 
 pub fn run(write: bool, allow_dirty: bool) -> Result<()> {
     let root = find_root()?;
-    ui::field("対象", &root.display().to_string());
+    ui::field("target", &root.display().to_string());
 
     if !allow_dirty {
         ensure_clean(&root)?;
@@ -29,18 +29,18 @@ pub fn run(write: bool, allow_dirty: bool) -> Result<()> {
 
     if !write {
         ui::info("");
-        ui::info("これは下見です。実際に書き換えるには --write を付けてください");
+        ui::info("This was a dry run. Pass --write to actually change things");
         return Ok(());
     }
     let _ = summary;
     ui::info("");
-    ui::ok("移行しました");
+    ui::ok("migrated");
     ui::info("");
-    ui::info("次にやること:");
+    ui::info("Next:");
     ui::info(crate::commands::NEXT_ENV_UPDATE);
-    ui::info("  acrust test a       # どれか1問で動作を確かめる");
+    ui::info("  acrust test a       # check that one problem still works");
     ui::info("");
-    ui::info("元に戻したいときは、コミット前なら `git checkout .` で戻せます");
+    ui::info("To undo this before committing, run `git checkout .`");
     Ok(())
 }
 
@@ -58,12 +58,12 @@ pub struct Summary {
 /// 往復検証は `write` が false でも必ず行う。1 件でも合わなければ何も書かずにエラーを返す。
 pub fn migrate_at(root: &Path, write: bool) -> Result<Summary> {
     let compete = std::fs::read_to_string(root.join(COMPETE_FILE))
-        .with_context(|| format!("{} を読めませんでした", root.join(COMPETE_FILE).display()))?;
+        .with_context(|| format!("could not read {}", root.join(COMPETE_FILE).display()))?;
     let compete = snowchains::parse_compete_config(&compete)?;
 
     let packages = collect_packages(root)?;
     if packages.is_empty() {
-        bail!("cargo-compete 形式のパッケージが1つも見つかりませんでした");
+        bail!("found no cargo-compete packages at all");
     }
 
     let plan = Plan::build(root, packages)?;
@@ -78,14 +78,14 @@ pub fn migrate_at(root: &Path, write: bool) -> Result<Summary> {
 
 /// `compete.toml` を持つディレクトリ。
 fn find_root() -> Result<PathBuf> {
-    let cwd = std::env::current_dir().context("カレントディレクトリを取得できませんでした")?;
+    let cwd = std::env::current_dir().context("could not get the current directory")?;
     cwd.ancestors()
         .find(|dir| dir.join(COMPETE_FILE).is_file())
         .map(Path::to_path_buf)
         .ok_or_else(|| {
             anyhow!(
-                "{COMPETE_FILE} が見つかりません（{} から上に辿って探しました）。\
-                 cargo-compete のリポジトリの中で実行してください",
+                "{COMPETE_FILE} not found (looked upwards from {}). \
+                 Run this inside a cargo-compete repository",
                 cwd.display()
             )
         })
@@ -98,17 +98,15 @@ fn ensure_clean(root: &Path) -> Result<()> {
         .arg(root)
         .args(["status", "--porcelain"])
         .output()
-        .context("git を起動できませんでした")?;
+        .context("could not start git")?;
     if !output.status.success() {
         bail!(
-            "{} は git リポジトリではないようです。--allow-dirty を付ければ続行できます",
+            "{} does not look like a git repository. Pass --allow-dirty to go ahead anyway",
             root.display()
         );
     }
     if !output.stdout.is_empty() {
-        bail!(
-            "コミットしていない変更があります。移行前にコミットするか、--allow-dirty を付けてください"
-        );
+        bail!("there are uncommitted changes. Commit them first, or pass --allow-dirty");
     }
     Ok(())
 }
@@ -137,9 +135,9 @@ impl Plan {
         for manifest_path in manifests {
             let dir = manifest_path.parent().unwrap_or(root).to_path_buf();
             let text = std::fs::read_to_string(&manifest_path)
-                .with_context(|| format!("{} を読めませんでした", manifest_path.display()))?;
+                .with_context(|| format!("could not read {}", manifest_path.display()))?;
             let bins = snowchains::parse_bins(&text)
-                .with_context(|| format!("{} を読めませんでした", manifest_path.display()))?;
+                .with_context(|| format!("could not read {}", manifest_path.display()))?;
             if bins.is_empty() {
                 continue;
             }
@@ -148,17 +146,13 @@ impl Plan {
             let mut tasks = BTreeMap::new();
             for bin in &bins {
                 let (bin_contest, task) = bin.contest_and_task().with_context(|| {
-                    format!(
-                        "{} の {} を読めませんでした",
-                        manifest_path.display(),
-                        bin.name
-                    )
+                    format!("could not read {} in {}", manifest_path.display(), bin.name)
                 })?;
                 match &contest {
                     None => contest = Some(bin_contest),
                     Some(existing) if existing == &bin_contest => {}
                     Some(existing) => bail!(
-                        "{} の中でコンテストが揃っていません（{existing} と {bin_contest}）",
+                        "{} mixes contests ({existing} and {bin_contest})",
                         manifest_path.display()
                     ),
                 }
@@ -171,14 +165,14 @@ impl Plan {
                 let rebuilt = snowchains::rebuild_problem_url(&contest, &tasks, &bin.alias)
                     .ok_or_else(|| {
                         anyhow!(
-                            "{} の {} を組み直せません",
+                            "cannot rebuild {} in {}",
                             manifest_path.display(),
                             bin.alias
                         )
                     })?;
                 if rebuilt != bin.problem {
                     bail!(
-                        "{} の {} で問題 URL が一致しません:\n  元: {}\n  後: {rebuilt}",
+                        "the problem URL for {1} in {0} does not match:\n  before: {2}\n  after:  {rebuilt}",
                         manifest_path.display(),
                         bin.alias,
                         bin.problem
@@ -216,40 +210,40 @@ impl Plan {
         let bins: usize = self.packages.iter().map(|p| p.bins.len()).sum();
         let files: usize = self.packages.iter().map(|p| p.suites.len()).sum();
         ui::info("");
-        ui::section("移行の内容");
-        ui::field("パッケージ", &format!("{} 個", self.packages.len()));
-        ui::field("bin", &format!("{bins} 本"));
+        ui::section("What will be migrated");
+        ui::field("packages", &format!("{}", self.packages.len()));
+        ui::field("bins", &format!("{bins}"));
         ui::field(
-            "テストケース",
-            &format!("{files} ファイル / {} ケース", self.cases),
+            "test cases",
+            &format!("{files} files / {} cases", self.cases),
         );
         if write {
             ui::field(
-                "設定",
-                ".acrust/config.toml と .acrust/template/ を作ります",
+                "config",
+                "creates .acrust/config.toml and .acrust/template/",
             );
             if compete.template_src.is_some() {
                 ui::field(
-                    "テンプレート",
-                    "compete.toml の src を template/main.rs に切り出します",
+                    "template",
+                    "moves the src in compete.toml out to template/main.rs",
                 );
             }
             if compete.cargo_lock.is_some() {
                 ui::field(
                     "Cargo.lock",
-                    "template-cargo-lock.toml を template/Cargo.lock にします",
+                    "turns template-cargo-lock.toml into template/Cargo.lock",
                 );
             }
             ui::field(
-                "削除",
+                "removes",
                 "compete.toml / template-cargo-lock.toml / testcases/*.yml",
             );
         }
         if let Some(language_id) = &compete.language_id {
             ui::info("");
             ui::warn(&format!(
-                "compete.toml の language_id = \"{language_id}\" は引き継ぎません。\
-                 acrust は提出ページから自動判定します"
+                "not carrying over language_id = \"{language_id}\" from compete.toml. \
+                 acrust reads it off the submit page instead"
             ));
         }
     }
@@ -262,7 +256,7 @@ impl Plan {
             for (yaml_path, toml_path, suite) in &package.suites {
                 suite.save(toml_path)?;
                 std::fs::remove_file(yaml_path)
-                    .with_context(|| format!("{} を消せませんでした", yaml_path.display()))?;
+                    .with_context(|| format!("could not delete {}", yaml_path.display()))?;
             }
         }
 
@@ -270,7 +264,7 @@ impl Plan {
             let path = root.join(name);
             if path.is_file() {
                 std::fs::remove_file(&path)
-                    .with_context(|| format!("{} を消せませんでした", path.display()))?;
+                    .with_context(|| format!("could not delete {}", path.display()))?;
             }
         }
         Ok(())
@@ -284,7 +278,7 @@ fn convert_testcases(package_dir: &Path) -> Result<Vec<(PathBuf, PathBuf, TestSu
         return Ok(Vec::new());
     }
     let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .with_context(|| format!("{} を読めませんでした", dir.display()))?
+        .with_context(|| format!("could not read {}", dir.display()))?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("yml"))
@@ -295,9 +289,9 @@ fn convert_testcases(package_dir: &Path) -> Result<Vec<(PathBuf, PathBuf, TestSu
         .into_iter()
         .map(|yaml_path| {
             let yaml = std::fs::read_to_string(&yaml_path)
-                .with_context(|| format!("{} を読めませんでした", yaml_path.display()))?;
+                .with_context(|| format!("could not read {}", yaml_path.display()))?;
             let suite = snowchains::parse_test_suite(&yaml)
-                .with_context(|| format!("{} を読めませんでした", yaml_path.display()))?;
+                .with_context(|| format!("could not read {}", yaml_path.display()))?;
             verify_round_trip(&suite, &yaml_path)?;
             let toml_path = yaml_path.with_extension("toml");
             Ok((yaml_path, toml_path, suite))
@@ -309,12 +303,12 @@ fn convert_testcases(package_dir: &Path) -> Result<Vec<(PathBuf, PathBuf, TestSu
 fn verify_round_trip(suite: &TestSuite, source: &Path) -> Result<()> {
     let text = suite
         .to_toml()
-        .with_context(|| format!("{} を TOML にできませんでした", source.display()))?;
+        .with_context(|| format!("could not turn {} into TOML", source.display()))?;
     let back = TestSuite::parse(&text)
-        .with_context(|| format!("{} の変換結果を読み直せませんでした", source.display()))?;
+        .with_context(|| format!("could not read back the conversion of {}", source.display()))?;
     if &back != suite {
         bail!(
-            "{} の変換で内容が変わりました。何も書き換えずに中断します",
+            "converting {} changed its contents. Stopping without writing anything",
             source.display()
         );
     }
@@ -327,14 +321,14 @@ fn verify_round_trip(suite: &TestSuite, source: &Path) -> Result<()> {
 fn rewrite_manifest(package: &PackagePlan) -> Result<()> {
     let path = package.dir.join("Cargo.toml");
     let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("{} を読めませんでした", path.display()))?;
+        .with_context(|| format!("could not read {}", path.display()))?;
     let mut document: toml_edit::DocumentMut = text
         .parse()
-        .with_context(|| format!("{} が TOML として読めません", path.display()))?;
+        .with_context(|| format!("{} is not valid TOML", path.display()))?;
 
     let metadata = document["package"]["metadata"]
         .as_table_mut()
-        .context("[package.metadata] がテーブルではありません")?;
+        .context("[package.metadata] is not a table")?;
     metadata.remove("cargo-compete");
 
     let acrust = metadata
@@ -354,14 +348,14 @@ fn rewrite_manifest(package: &PackagePlan) -> Result<()> {
     }
 
     std::fs::write(&path, document.to_string())
-        .with_context(|| format!("{} に書けませんでした", path.display()))
+        .with_context(|| format!("could not write {}", path.display()))
 }
 
 /// `.acrust/` 以下を作る。テンプレートは compete.toml から持ち越す。
 fn write_settings(root: &Path, compete: &CompeteConfig) -> Result<()> {
     let mut config: toml_edit::DocumentMut = init::DEFAULT_CONFIG
         .parse()
-        .context("既定の config.toml が壊れています")?;
+        .context("the built-in config.toml is broken")?;
     if let Some(edition) = &compete.edition {
         config["package"]["edition"] = toml_edit::value(edition.as_str());
     }
@@ -397,7 +391,7 @@ fn write_settings(root: &Path, compete: &CompeteConfig) -> Result<()> {
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::copy(&source, &destination)
-                .with_context(|| format!("{} を移せませんでした", source.display()))?;
+                .with_context(|| format!("could not move {}", source.display()))?;
         }
     }
     Ok(())
@@ -407,7 +401,7 @@ fn write_settings(root: &Path, compete: &CompeteConfig) -> Result<()> {
 fn collect_packages(root: &Path) -> Result<Vec<PathBuf>> {
     let mut manifests = Vec::new();
     for entry in std::fs::read_dir(root)
-        .with_context(|| format!("{} を読めませんでした", root.display()))?
+        .with_context(|| format!("could not read {}", root.display()))?
         .filter_map(Result::ok)
     {
         let path = entry.path();

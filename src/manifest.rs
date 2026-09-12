@@ -12,10 +12,10 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 /// 変更があれば書き戻して `true` を返す。
 pub fn merge(path: &Path, contest: &str, problems: &[ProblemSpec]) -> Result<bool> {
     let text = std::fs::read_to_string(path)
-        .with_context(|| format!("{} を読めませんでした", path.display()))?;
+        .with_context(|| format!("could not read {}", path.display()))?;
     let mut document: DocumentMut = text
         .parse()
-        .with_context(|| format!("{} が TOML として読めません", path.display()))?;
+        .with_context(|| format!("{} is not valid TOML", path.display()))?;
 
     let mut changed = false;
     changed |= set_contest(&mut document, contest);
@@ -24,7 +24,7 @@ pub fn merge(path: &Path, contest: &str, problems: &[ProblemSpec]) -> Result<boo
 
     if changed {
         std::fs::write(path, document.to_string())
-            .with_context(|| format!("{} に書けませんでした", path.display()))?;
+            .with_context(|| format!("could not write {}", path.display()))?;
     }
     Ok(changed)
 }

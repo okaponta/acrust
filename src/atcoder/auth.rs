@@ -41,8 +41,8 @@ pub fn verify_session_cookie(client: &AtCoderClient, cookie: &str) -> Result<Str
     match current_user(client)? {
         Some(user) => Ok(user),
         None => bail!(
-            "このセッションクッキーでは AtCoder にログインできませんでした。\
-             期限切れか、コピーが途中で切れている可能性があります"
+            "that session cookie does not log in to AtCoder. \
+             It may have expired, or the copy may be cut short"
         ),
     }
 }

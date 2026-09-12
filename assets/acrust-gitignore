@@ -1,2 +1,2 @@
-# acrust が生成するキャッシュ。コミットしない。
+# Caches acrust writes. Not for committing.
 cache/

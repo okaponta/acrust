@@ -30,8 +30,8 @@ pub struct JudgeEnvironment {
 impl JudgeEnvironment {
     /// クレート名 -> 指定（`"=0.14.0"` や `{ version = "…", features = […] }`）。
     pub fn dependency_table(&self) -> Result<toml::Table> {
-        let table: toml::Table = toml::from_str(&self.dependencies)
-            .context("[dependencies] を TOML として読めませんでした")?;
+        let table: toml::Table =
+            toml::from_str(&self.dependencies).context("[dependencies] is not valid TOML")?;
         match table.get("dependencies") {
             Some(toml::Value::Table(inner)) => Ok(inner.clone()),
             _ => Ok(table),
@@ -42,7 +42,7 @@ impl JudgeEnvironment {
 /// 言語一覧のページから、その言語のインストールスクリプトの URL を探す。
 pub fn find_install_script(html_text: &str, pattern: &str) -> Result<String> {
     let regex = regex::Regex::new(pattern)
-        .map_err(|e| anyhow!("[submit] language-pattern が正規表現として読めません: {e}"))?;
+        .map_err(|e| anyhow!("[submit] language-pattern is not a valid regex: {e}"))?;
     let document = Html::parse_document(html_text);
     let details = Selector::parse("details").expect("static selector");
     let summary = Selector::parse("summary").expect("static selector");
@@ -66,43 +66,43 @@ pub fn find_install_script(html_text: &str, pattern: &str) -> Result<String> {
         }
     }
     Err(anyhow!(
-        "言語一覧に {pattern} に一致する項目のインストールスクリプトが見つかりません"
+        "no install script in the language list matches {pattern}"
     ))
 }
 
 /// インストールスクリプト（TOML）からジャッジ環境を取り出す。
 pub fn parse_install_script(text: &str) -> Result<JudgeEnvironment> {
     let script: toml::Table =
-        toml::from_str(text).context("インストールスクリプトを TOML として読めませんでした")?;
+        toml::from_str(text).context("the install script is not valid TOML")?;
     let display = script
         .get("display")
         .and_then(|v| v.as_str())
-        .context("インストールスクリプトに display がありません")?
+        .context("the install script has no display")?
         .to_owned();
     let install = script
         .get("install")
         .and_then(|v| v.as_str())
-        .context("インストールスクリプトに install がありません")?;
+        .context("the install script has no install")?;
 
     let rustc = capture(install, rust_version_re())
-        .context("インストールスクリプトから rustc のバージョンを読めませんでした")?;
+        .context("could not read the rustc version from the install script")?;
     let manifest = heredoc(install, "./Cargo.toml")
-        .context("インストールスクリプトに Cargo.toml の生成が見当たりません")?;
+        .context("the install script does not seem to generate a Cargo.toml")?;
 
-    let parsed: toml::Table = toml::from_str(&manifest)
-        .context("ジャッジの Cargo.toml を TOML として読めませんでした")?;
+    let parsed: toml::Table =
+        toml::from_str(&manifest).context("the judge's Cargo.toml is not valid TOML")?;
     let edition = parsed
         .get("package")
         .and_then(|p| p.get("edition"))
         .and_then(|v| v.as_str())
-        .context("ジャッジの Cargo.toml に edition がありません")?
+        .context("the judge's Cargo.toml has no edition")?
         .to_owned();
 
     // `[dependencies]` 以降をテキストのまま持つ。バージョンの由来を書いた
     // コメント（`# 202411から:`）ごと残したいので、TOML に通して書き直さない。
     let start = manifest
         .find("[dependencies]")
-        .context("ジャッジの Cargo.toml に [dependencies] がありません")?;
+        .context("the judge's Cargo.toml has no [dependencies]")?;
     let dependencies = manifest[start..].trim_end().to_owned() + "\n";
 
     Ok(JudgeEnvironment {

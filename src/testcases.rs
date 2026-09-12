@@ -99,22 +99,22 @@ impl TestSuite {
     }
 
     pub fn parse(text: &str) -> Result<Self> {
-        toml::from_str(text).context("テストケースファイルのパースに失敗しました")
+        toml::from_str(text).context("could not parse the test case file")
     }
 
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
-            .with_context(|| format!("{} を読めませんでした", path.display()))?;
-        Self::parse(&text).with_context(|| format!("{} の読み込みに失敗しました", path.display()))
+            .with_context(|| format!("could not read {}", path.display()))?;
+        Self::parse(&text).with_context(|| format!("could not load {}", path.display()))
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
         let text = self.to_toml()?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .with_context(|| format!("{} を作れませんでした", parent.display()))?;
+                .with_context(|| format!("could not create {}", parent.display()))?;
         }
-        std::fs::write(path, text).with_context(|| format!("{} に書けませんでした", path.display()))
+        std::fs::write(path, text).with_context(|| format!("could not write {}", path.display()))
     }
 
     /// 設計 §4.5 の形の TOML にする。
@@ -183,8 +183,8 @@ fn quote(s: &str) -> String {
 fn literal_block(case: &str, field: &str, data: &str) -> Result<String> {
     if data.contains(DELIMITER) {
         bail!(
-            "ケース {case} の {field} に {DELIMITER} が含まれており、\
-             TOML のリテラル文字列で表現できません"
+            "the {field} of case {case} contains {DELIMITER}, \
+             which a TOML literal string cannot hold"
         );
     }
     // 末尾が改行でないケース（`out = '''Yes'''`）も表現できるようにする。
@@ -362,7 +362,7 @@ No
         };
         let err = suite.to_toml().unwrap_err().to_string();
         assert!(err.contains("sample1"), "{err}");
-        assert!(err.contains("表現できません"), "{err}");
+        assert!(err.contains("cannot hold"), "{err}");
     }
 
     #[test]

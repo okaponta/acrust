@@ -19,12 +19,12 @@ pub fn update(language_list: Option<String>, yes: bool) -> Result<()> {
     let pattern = config.config.submit.language_pattern.clone();
 
     let client = AtCoderClient::new(&config.config.atcoder)?;
-    ui::arrow(&format!("言語一覧: {list_url}"));
+    ui::arrow(&format!("language list: {list_url}"));
     let list = client.get(&list_url)?;
     list.error_for_status()?;
 
     let script_url = env::find_install_script(&list.body, &pattern)?;
-    ui::arrow(&format!("インストールスクリプト: {script_url}"));
+    ui::arrow(&format!("install script: {script_url}"));
     let script = client.get(&script_url)?;
     script.error_for_status()?;
     let environment = env::parse_install_script(&script.body)?;
@@ -37,7 +37,7 @@ pub fn update(language_list: Option<String>, yes: bool) -> Result<()> {
             Some(response.body)
         }
         None => {
-            ui::warn("インストールスクリプトに Cargo.lock の取得元がありません");
+            ui::warn("the install script does not say where to get Cargo.lock");
             None
         }
     };
@@ -50,21 +50,21 @@ pub fn update(language_list: Option<String>, yes: bool) -> Result<()> {
         language_list,
     )?;
     if plan.is_empty() {
-        ui::ok(&format!("すでに最新です（{}）", environment.display));
+        ui::ok(&format!("already up to date ({})", environment.display));
         return Ok(());
     }
 
     plan.show(&environment);
     if !yes && !confirm()? {
-        ui::info("何も書き換えませんでした");
+        ui::info("nothing was written");
         return Ok(());
     }
     let dependencies_changed = !plan.dependencies.is_empty();
     plan.apply(&config, &environment, lock.as_deref())?;
-    ui::ok(&format!("{} に合わせました", environment.display));
+    ui::ok(&format!("matched {}", environment.display));
     if dependencies_changed {
         ui::info("");
-        ui::info("依存が変わったので、次のビルドだけ 30 秒ほどかかります");
+        ui::info("the dependencies changed, so the next build alone will take about 30 seconds");
     }
     Ok(())
 }
@@ -105,7 +105,7 @@ impl Plan {
             && pinned.as_deref() != Some(environment.rustc.as_str()))
         .then(|| {
             (
-                pinned.unwrap_or_else(|| "(固定なし)".to_owned()),
+                pinned.unwrap_or_else(|| "(not pinned)".to_owned()),
                 environment.rustc.clone(),
             )
         });
@@ -140,7 +140,7 @@ impl Plan {
 
     fn show(&self, environment: &JudgeEnvironment) {
         ui::info("");
-        ui::section(&format!("{} との差分", environment.display));
+        ui::section(&format!("Difference from {}", environment.display));
         if let Some((before, after)) = &self.toolchain {
             ui::field("rustc", &format!("{before} → {after}"));
         }
@@ -149,10 +149,10 @@ impl Plan {
         }
         if let Some((before, after)) = &self.lock {
             let before = match before {
-                Some(lines) => format!("{lines} 行"),
-                None => "なし".to_owned(),
+                Some(lines) => format!("{lines} lines"),
+                None => "none".to_owned(),
             };
-            ui::field("Cargo.lock", &format!("{before} → {after} 行"));
+            ui::field("Cargo.lock", &format!("{before} -> {after} lines"));
         }
         if let Some(url) = &self.language_list {
             ui::field("language-list", url);
@@ -160,13 +160,13 @@ impl Plan {
 
         let diff = &self.dependencies;
         if diff.is_empty() {
-            ui::field("依存クレート", "変更なし");
+            ui::field("crates", "no change");
             return;
         }
         ui::field(
-            "依存クレート",
+            "crates",
             &format!(
-                "追加 {} / 削除 {} / 変更 {}",
+                "{} added / {} removed / {} changed",
                 diff.added.len(),
                 diff.removed.len(),
                 diff.changed.len()
@@ -192,13 +192,13 @@ impl Plan {
         if !self.dependencies.is_empty() {
             let path = config.template_dependencies();
             write(&path, &render_dependencies(environment, config))?;
-            ui::field("更新", &display(config, &path));
+            ui::field("updated", &display(config, &path));
         }
         if self.lock.is_some() {
             if let Some(lock) = lock {
                 let path = config.template_cargo_lock();
                 write(&path, lock)?;
-                ui::field("更新", &display(config, &path));
+                ui::field("updated", &display(config, &path));
             }
         }
         if self.toolchain.is_some() {
@@ -207,11 +207,11 @@ impl Plan {
                 &path,
                 &crate::commands::init::rust_toolchain_toml(&environment.rustc),
             )?;
-            ui::field("更新", &display(config, &path));
+            ui::field("updated", &display(config, &path));
         }
         if self.edition.is_some() || self.language_list.is_some() {
             update_config(config, &environment.edition, self.language_list.as_deref())?;
-            ui::field("更新", &display(config, &config.path));
+            ui::field("updated", &display(config, &config.path));
         }
         Ok(())
     }
@@ -220,13 +220,13 @@ impl Plan {
 /// 出どころが分かるヘッダを付けて `[dependencies]` を書く。
 fn render_dependencies(environment: &JudgeEnvironment, config: &LoadedConfig) -> String {
     format!(
-        "# AtCoder のジャッジ環境と完全に一致する [dependencies]（決定 D6）。\n\
+        "# [dependencies] matching AtCoder's judge environment exactly.\n\
          #\n\
-         # このファイルは `acrust env update` が自動生成する。\n\
-         # 手で削っても構わない（env update は上書き前に diff を見せる）。\n\
+         # `acrust env update` generates this file.\n\
+         # Trimming it by hand is fine; env update shows a diff before overwriting.\n\
          #\n\
-         # 環境: {}\n\
-         # 出典: {}\n\n{}",
+         # Environment: {}\n\
+         # Source:      {}\n\n{}",
         environment.display,
         config.config.atcoder.language_list,
         // テンプレートは [dependencies] の「中身」。見出しは Cargo.toml を組み立てる側が書く。
@@ -237,17 +237,17 @@ fn render_dependencies(environment: &JudgeEnvironment, config: &LoadedConfig) ->
 /// 設定は `toml_edit` で書き換える。コメントも書式も保つ（決定 D3）。
 fn update_config(config: &LoadedConfig, edition: &str, language_list: Option<&str>) -> Result<()> {
     let text = std::fs::read_to_string(&config.path)
-        .with_context(|| format!("{} を読めませんでした", config.path.display()))?;
+        .with_context(|| format!("could not read {}", config.path.display()))?;
     let mut document: toml_edit::DocumentMut = text
         .parse()
-        .with_context(|| format!("{} が TOML として読めません", config.path.display()))?;
+        .with_context(|| format!("{} is not valid TOML", config.path.display()))?;
 
     document["package"]["edition"] = toml_edit::value(edition);
     if let Some(url) = language_list {
         document["atcoder"]["language-list"] = toml_edit::value(url);
     }
     std::fs::write(&config.path, document.to_string())
-        .with_context(|| format!("{} に書けませんでした", config.path.display()))
+        .with_context(|| format!("could not write {}", config.path.display()))
 }
 
 /// 末尾に改行がある / ない両方で同じ数になるように数える。
@@ -264,9 +264,9 @@ fn current_toolchain(path: &Path) -> Option<String> {
 fn write(path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .with_context(|| format!("{} を作れませんでした", parent.display()))?;
+            .with_context(|| format!("could not create {}", parent.display()))?;
     }
-    std::fs::write(path, contents).with_context(|| format!("{} に書けませんでした", path.display()))
+    std::fs::write(path, contents).with_context(|| format!("could not write {}", path.display()))
 }
 
 fn display(config: &LoadedConfig, path: &Path) -> String {
@@ -277,16 +277,14 @@ fn confirm() -> Result<bool> {
     use std::io::IsTerminal as _;
 
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "書き換えてよいか確認できません（対話端末ではありません）。--yes を付けてください"
-        );
+        anyhow::bail!("cannot ask whether to write (not a terminal). Pass --yes");
     }
     ui::info("");
-    print!("この内容で書き換えますか？ [y/N]: ");
+    print!("Write these changes? [y/N]: ");
     std::io::stdout().flush().ok();
     let mut answer = String::new();
     std::io::stdin()
         .read_line(&mut answer)
-        .context("標準入力を読めませんでした")?;
+        .context("could not read stdin")?;
     Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
 }

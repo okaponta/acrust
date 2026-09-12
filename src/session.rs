@@ -63,7 +63,7 @@ pub fn cache_dir() -> Result<PathBuf> {
 }
 
 fn home_dir() -> Result<PathBuf> {
-    let dirs = directories::BaseDirs::new().context("ホームディレクトリを特定できませんでした")?;
+    let dirs = directories::BaseDirs::new().context("could not work out your home directory")?;
     Ok(dirs.home_dir().to_path_buf())
 }
 
@@ -78,13 +78,9 @@ pub fn load_from(path: &Path) -> Result<Option<Session>> {
     }
     warn_and_fix_permissions(path)?;
     let text = std::fs::read_to_string(path)
-        .with_context(|| format!("{} を読めませんでした", path.display()))?;
-    let session: Session = serde_json::from_str(&text).with_context(|| {
-        format!(
-            "{} の内容が壊れています。`acrust login` をやり直してください",
-            path.display()
-        )
-    })?;
+        .with_context(|| format!("could not read {}", path.display()))?;
+    let session: Session = serde_json::from_str(&text)
+        .with_context(|| format!("{} is corrupted. Run `acrust login` again", path.display()))?;
     Ok(Some(session))
 }
 
@@ -97,11 +93,11 @@ pub fn save(session: &Session) -> Result<PathBuf> {
 pub fn save_to(path: &Path, session: &Session) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .with_context(|| format!("{} を作れませんでした", parent.display()))?;
+            .with_context(|| format!("could not create {}", parent.display()))?;
         restrict_dir(parent)?;
     }
     let text = serde_json::to_string_pretty(session)? + "\n";
-    write_private(path, &text).with_context(|| format!("{} に書けませんでした", path.display()))?;
+    write_private(path, &text).with_context(|| format!("could not write {}", path.display()))?;
     Ok(())
 }
 
@@ -111,8 +107,7 @@ pub fn discard() -> Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
     }
-    std::fs::remove_file(&path)
-        .with_context(|| format!("{} を消せませんでした", path.display()))?;
+    std::fs::remove_file(&path).with_context(|| format!("could not delete {}", path.display()))?;
     Ok(Some(path))
 }
 
@@ -155,7 +150,7 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).with_context(|| {
         format!(
-            "{} のパーミッションを {mode:o} にできませんでした",
+            "could not set the permissions of {} to {mode:o}",
             path.display()
         )
     })
@@ -167,7 +162,7 @@ pub fn warn_and_fix_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
 
     let mode = std::fs::metadata(path)
-        .with_context(|| format!("{} の情報を取得できませんでした", path.display()))?
+        .with_context(|| format!("could not stat {}", path.display()))?
         .permissions()
         .mode()
         & 0o777;
@@ -175,10 +170,10 @@ pub fn warn_and_fix_permissions(path: &Path) -> Result<()> {
         // パスワード同等のものが他ユーザーから読める状態は放置できないので、
         // 知らせたうえでこちらで締める（`chmod` を促すだけでは手遅れになりうる）。
         crate::ui::warn(&format!(
-            "セッションファイルが他のユーザーからも読める状態（{mode:o}）でした"
+            "the session file was readable by other users ({mode:o})"
         ));
         crate::ui::warn_detail(&format!(
-            "パスワードと同じものなので 600 に直しました: {}",
+            "it is as good as a password, so it is now 600: {}",
             path.display()
         ));
         set_mode(path, 0o600)?;

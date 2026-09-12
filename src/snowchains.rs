@@ -25,15 +25,15 @@ impl BinEntry {
         let rest = self
             .problem
             .strip_prefix("https://atcoder.jp/contests/")
-            .ok_or_else(|| anyhow!("AtCoder の問題 URL ではありません: {}", self.problem))?;
+            .ok_or_else(|| anyhow!("not an AtCoder problem URL: {}", self.problem))?;
         let (contest, rest) = rest
             .split_once('/')
-            .ok_or_else(|| anyhow!("問題 URL を解釈できません: {}", self.problem))?;
+            .ok_or_else(|| anyhow!("cannot make sense of the problem URL: {}", self.problem))?;
         let task = rest
             .strip_prefix("tasks/")
-            .ok_or_else(|| anyhow!("問題 URL を解釈できません: {}", self.problem))?;
+            .ok_or_else(|| anyhow!("cannot make sense of the problem URL: {}", self.problem))?;
         if contest.is_empty() || task.is_empty() || task.contains('/') {
-            bail!("問題 URL を解釈できません: {}", self.problem);
+            bail!("cannot make sense of the problem URL: {}", self.problem);
         }
         Ok((contest.to_owned(), task.to_owned()))
     }
@@ -41,7 +41,7 @@ impl BinEntry {
 
 /// `[package.metadata.cargo-compete.bin]` を読む。
 pub fn parse_bins(manifest: &str) -> Result<Vec<BinEntry>> {
-    let table: toml::Table = toml::from_str(manifest).context("Cargo.toml を読めませんでした")?;
+    let table: toml::Table = toml::from_str(manifest).context("could not read Cargo.toml")?;
     let bins = table
         .get("package")
         .and_then(|p| p.get("metadata"))
@@ -57,12 +57,12 @@ pub fn parse_bins(manifest: &str) -> Result<Vec<BinEntry>> {
             let alias = value
                 .get("alias")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("{name} に alias がありません"))?
+                .ok_or_else(|| anyhow!("{name} has no alias"))?
                 .to_owned();
             let problem = value
                 .get("problem")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("{name} に problem がありません"))?
+                .ok_or_else(|| anyhow!("{name} has no problem"))?
                 .to_owned();
             Ok(BinEntry {
                 name: name.clone(),
@@ -89,8 +89,7 @@ pub struct CompeteConfig {
 }
 
 pub fn parse_compete_config(text: &str) -> Result<CompeteConfig> {
-    let table: toml::Table =
-        toml::from_str(text).context("compete.toml を TOML として読めませんでした")?;
+    let table: toml::Table = toml::from_str(text).context("compete.toml is not valid TOML")?;
     let template = table.get("template");
     let new = template.and_then(|t| t.get("new"));
 
@@ -150,7 +149,7 @@ pub fn parse_test_suite(yaml: &str) -> Result<TestSuite> {
             kind = Some(match value.trim() {
                 "Batch" => SuiteKind::Batch,
                 "Interactive" => SuiteKind::Interactive,
-                other => bail!("知らない type です: {other}"),
+                other => bail!("unknown type: {other}"),
             });
         } else if let Some(value) = trimmed.strip_prefix("timelimit: ") {
             timelimit = parse_timelimit(value.trim())?;
@@ -159,7 +158,7 @@ pub fn parse_test_suite(yaml: &str) -> Result<TestSuite> {
                 "Lines" => Matching::Lines,
                 "SplitWhitespace" => Matching::Words,
                 "Exact" => Matching::Exact,
-                other => bail!("知らない match です: {other}"),
+                other => bail!("unknown match: {other}"),
             };
         } else if trimmed == "match:" {
             let (m, f) = parse_match_block(&mut lines)?;
@@ -170,11 +169,11 @@ pub fn parse_test_suite(yaml: &str) -> Result<TestSuite> {
         } else if trimmed == "cases: []" || trimmed == "cases: ~" {
             cases = Vec::new();
         } else {
-            bail!("{} 行目を解釈できません: {trimmed}", line.number);
+            bail!("cannot make sense of line {}: {trimmed}", line.number);
         }
     }
 
-    let kind = kind.context("type がありません")?;
+    let kind = kind.context("no type")?;
     Ok(TestSuite {
         kind,
         timelimit,
@@ -196,15 +195,15 @@ fn parse_timelimit(value: &str) -> Result<Option<String>> {
         } else if let Some(rest) = part.strip_suffix('s') {
             (rest, 1000)
         } else {
-            bail!("知らない timelimit です: {value}");
+            bail!("unknown timelimit: {value}");
         };
         let number: u64 = number
             .parse()
-            .with_context(|| format!("知らない timelimit です: {value}"))?;
+            .with_context(|| format!("unknown timelimit: {value}"))?;
         millis += number * scale;
     }
     if millis == 0 {
-        bail!("知らない timelimit です: {value}");
+        bail!("unknown timelimit: {value}");
     }
     Ok(Some(crate::testcases::format_duration(millis)))
 }
@@ -216,10 +215,10 @@ fn parse_timelimit(value: &str) -> Result<Option<String>> {
 ///     absolute_error: ~
 /// ```
 fn parse_match_block(lines: &mut Lines) -> Result<(Matching, Option<FloatTolerance>)> {
-    let header = lines.next().context("match: の中身がありません")?;
+    let header = lines.next().context("match: has no body")?;
     if header.text.trim() != "Float:" {
         bail!(
-            "{} 行目を解釈できません: {}",
+            "cannot make sense of line {}: {}",
             header.number,
             header.text.trim()
         );
@@ -236,7 +235,7 @@ fn parse_match_block(lines: &mut Lines) -> Result<(Matching, Option<FloatToleran
             _ => break,
         };
         *slot = parse_number(value.trim())
-            .with_context(|| format!("{} 行目の {key} を読めません", line.number))?;
+            .with_context(|| format!("could not read {key} on line {}", line.number))?;
         lines.next();
     }
     Ok((Matching::Float, Some(tolerance)))
@@ -282,14 +281,14 @@ fn parse_cases(lines: &mut Lines) -> Result<Vec<TestCase>> {
                 .unwrap_or_default();
             *slot = Some(
                 read_scalar(lines, &value, 4)
-                    .with_context(|| format!("{number} 行目のデータを読めません"))?,
+                    .with_context(|| format!("could not read the data on line {number}"))?,
             );
         }
 
         cases.push(TestCase {
             name,
-            input: input.context("in がありません")?,
-            output: output.context("out がありません")?,
+            input: input.context("no in")?,
+            output: output.context("no out")?,
         });
     }
     Ok(cases)
@@ -307,7 +306,7 @@ fn read_scalar(lines: &mut Lines, marker: &str, key_indent: usize) -> Result<Str
         quoted if quoted.starts_with('"') && quoted.ends_with('"') && quoted.len() >= 2 => {
             unescape(&quoted[1..quoted.len() - 1])
         }
-        other => bail!("知らないデータの書き方です: {other}"),
+        other => bail!("unknown way of writing the data: {other}"),
     }
 }
 
@@ -373,8 +372,8 @@ fn unescape(text: &str) -> Result<String> {
             Some('r') => out.push('\r'),
             Some('"') => out.push('"'),
             Some('\\') => out.push('\\'),
-            Some(other) => bail!("知らないエスケープです: \\{other}"),
-            None => bail!("エスケープが途中で終わっています"),
+            Some(other) => bail!("unknown escape: \\{other}"),
+            None => bail!("the escape is cut off"),
         }
     }
     Ok(out)
@@ -505,7 +504,7 @@ mod tests {
     fn an_unknown_line_is_an_error_rather_than_a_silent_loss() {
         let yaml = "---\ntype: Batch\ntimelimit: 2s\nmatch: Lines\nunexpected: value\n";
         let err = parse_test_suite(yaml).unwrap_err().to_string();
-        assert!(err.contains("解釈できません"), "{err}");
+        assert!(err.contains("cannot make sense of"), "{err}");
         assert!(err.contains("unexpected"), "{err}");
 
         let yaml = "---\ntype: Batch\ntimelimit: 2 fortnights\n";

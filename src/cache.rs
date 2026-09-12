@@ -58,8 +58,8 @@ pub fn forget_language(pattern: &str) -> Result<()> {
 fn write(path: &std::path::Path, cache: &LanguageCache) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .with_context(|| format!("{} を作れませんでした", parent.display()))?;
+            .with_context(|| format!("could not create {}", parent.display()))?;
     }
     let text = serde_json::to_string_pretty(cache)? + "\n";
-    std::fs::write(path, text).with_context(|| format!("{} に書けませんでした", path.display()))
+    std::fs::write(path, text).with_context(|| format!("could not write {}", path.display()))
 }

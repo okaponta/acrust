@@ -2,7 +2,7 @@
 ///
 /// 同じコマンドの説明を 2 か所で別の言い方にしていたので、1 つにまとめた。
 pub const NEXT_ENV_UPDATE: &str =
-    "  acrust env update   # ジャッジ環境（依存・Cargo.lock・rustc）に合わせる";
+    "  acrust env update   # match the judge environment (crates, Cargo.lock, rustc)";
 
 pub mod auth;
 pub mod contest;

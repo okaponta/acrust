@@ -130,7 +130,7 @@ fn a_freshly_generated_package_refuses_to_guess() {
     let err = resolve_problem(&package, None, ResolveMode::Mtime, Some(TEMPLATE))
         .unwrap_err()
         .to_string();
-    assert!(err.contains("テンプレートのまま"), "{err}");
+    assert!(err.contains("still the template"), "{err}");
     assert!(err.contains("a, b, c, d"), "{err}");
 
     std::fs::remove_dir_all(&root).unwrap();
@@ -218,7 +218,7 @@ fn a_tie_on_the_newest_mtime_is_ambiguous_rather_than_arbitrary() {
     let err = resolve_problem(&package, None, ResolveMode::Mtime, Some(TEMPLATE))
         .unwrap_err()
         .to_string();
-    assert!(err.contains("mtime が同じ"), "{err}");
+    assert!(err.contains("share an mtime"), "{err}");
     assert!(err.contains("c, d"), "{err}");
 
     std::fs::remove_dir_all(&root).unwrap();

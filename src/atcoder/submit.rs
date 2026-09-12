@@ -90,15 +90,15 @@ pub fn hidden_inputs(page: &str, contest: &str) -> Vec<(String, String)> {
 /// `^Rust \(rustc` のような正規表現で言語を選ぶ。
 pub fn pick_language(languages: &[Language], pattern: &str) -> Result<Language> {
     let regex = regex::Regex::new(pattern)
-        .map_err(|e| anyhow!("[submit] language-pattern が正規表現として読めません: {e}"))?;
+        .map_err(|e| anyhow!("[submit] language-pattern is not a valid regex: {e}"))?;
     let mut matched: Vec<&Language> = languages
         .iter()
         .filter(|language| regex.is_match(&language.name))
         .collect();
     if matched.is_empty() {
         return Err(anyhow!(
-            "提出ページに {pattern} に一致する言語がありません（候補 {} 件）。\
-             [submit] language-id で直接指定できます",
+            "no language on the submit page matches {pattern} ({} to choose from). \
+             You can set one directly with [submit] language-id",
             languages.len()
         ));
     }

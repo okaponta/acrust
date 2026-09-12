@@ -43,7 +43,7 @@ pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
     let path = config.testcases_path(&package_rel, &resolved.bin.alias);
     if !path.is_file() {
         bail!(
-            "{} がありません。`acrust fetch {}` でサンプルを取得してください",
+            "{} is missing. Run `acrust fetch {}` to get the samples",
             path.display(),
             package.contest
         );
@@ -52,13 +52,13 @@ pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
 
     if suite.kind == SuiteKind::Interactive {
         ui::warn(&format!(
-            "{} {} はインタラクティブ問題なので、サンプルテストはできません",
+            "{} {} is interactive, so there are no sample tests to run",
             package.contest, resolved.bin.alias
         ));
         return Ok(ExitCode::SUCCESS);
     }
     if suite.cases.is_empty() {
-        bail!("{} にテストケースがありません", path.display());
+        bail!("{} has no test cases", path.display());
     }
 
     let profile = if release {
@@ -134,7 +134,7 @@ fn show_failure(suite: &TestSuite, outcome: &Outcome, timelimit: Duration) {
                 ui::inline(
                     "timelimit",
                     &format!(
-                        "{} ms を超えました（{} ms で打ち切り）",
+                        "over {} ms (killed at {} ms)",
                         timelimit.as_millis(),
                         outcome.elapsed.as_millis()
                     ),

@@ -51,7 +51,7 @@ impl AtCoderClient {
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(30))
             .build()
-            .context("HTTP クライアントを作れませんでした")?;
+            .context("could not build the HTTP client")?;
 
         Ok(Self {
             http,
@@ -116,9 +116,7 @@ impl AtCoderClient {
         let mut attempt = 0;
         loop {
             self.wait_for_slot();
-            let cloned = request
-                .try_clone()
-                .context("リクエストを複製できませんでした")?;
+            let cloned = request.try_clone().context("could not clone the request")?;
             let result = cloned.send();
             self.last_request.set(Some(Instant::now()));
 
@@ -126,8 +124,7 @@ impl AtCoderClient {
                 Ok(response) => response,
                 Err(e) => {
                     if attempt >= self.retry {
-                        return Err(e)
-                            .with_context(|| format!("{url} へのリクエストに失敗しました"));
+                        return Err(e).with_context(|| format!("the request to {url} failed"));
                     }
                     attempt += 1;
                     std::thread::sleep(backoff(attempt));
@@ -139,7 +136,7 @@ impl AtCoderClient {
                 attempt += 1;
                 let wait = retry_after(&response).unwrap_or_else(|| backoff(attempt));
                 crate::ui::warn(&format!(
-                    "{} が返りました（{url}）。{:.1} 秒待って再試行します（{attempt}/{}）",
+                    "got {} from {url}. Waiting {:.1}s and retrying ({attempt}/{})",
                     response.status(),
                     wait.as_secs_f64(),
                     self.retry
@@ -197,7 +194,7 @@ impl AtCoderResponse {
             .map(absolutize);
         let body = response
             .text()
-            .with_context(|| format!("{url} のレスポンスを読めませんでした"))?;
+            .with_context(|| format!("could not read the response from {url}"))?;
         Ok(Self {
             url: url.to_owned(),
             status,
@@ -217,9 +214,9 @@ impl AtCoderResponse {
         }
         let alerts = crate::atcoder::html::alerts(&self.body);
         if let Some(first) = alerts.first() {
-            bail!("{} が {} を返しました: {first}", self.url, self.status);
+            bail!("{} returned {}: {first}", self.url, self.status);
         }
-        bail!("{} が {} を返しました", self.url, self.status);
+        bail!("{} returned {}", self.url, self.status);
     }
 }
 

@@ -41,7 +41,7 @@ fn a_missing_table_is_an_error_that_says_so() {
     let err = scrape::parse_task_list("<html><body>Sign In</body></html>", "dummy001")
         .unwrap_err()
         .to_string();
-    assert!(err.contains("問題一覧を取り出せませんでした"), "{err}");
+    assert!(err.contains("could not pull out the problem list"), "{err}");
 }
 
 #[test]
@@ -127,5 +127,5 @@ fn an_unrecognisable_page_is_an_error_that_says_so() {
     let err = scrape::parse_tasks_print("<html><body><p>404</p></body></html>")
         .unwrap_err()
         .to_string();
-    assert!(err.contains("入出力例を1問も取り出せませんでした"), "{err}");
+    assert!(err.contains("could not pull out samples"), "{err}");
 }

@@ -42,7 +42,7 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
     // 誤推定のコストが非対称なので、推定したときだけ確認する（決定 D7）。
     // 明示指定なら確認しない。
     if resolved.origin == Origin::Inferred && !confirm(&resolved, &package)? {
-        ui::info("提出をやめました");
+        ui::info("did not submit");
         return Ok(ExitCode::FAILURE);
     }
 
@@ -50,13 +50,13 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
     let screen_name = task
         .rsplit('/')
         .next()
-        .context("問題URLから screen name を取り出せませんでした")?
+        .context("could not pull the screen name out of the problem URL")?
         .to_owned();
 
     let source = std::fs::read_to_string(&resolved.bin.src_path)
-        .with_context(|| format!("{} を読めませんでした", resolved.bin.src_path.display()))?;
+        .with_context(|| format!("could not read {}", resolved.bin.src_path.display()))?;
     if source.trim().is_empty() {
-        bail!("{} が空です", resolved.bin.src_path.display());
+        bail!("{} is empty", resolved.bin.src_path.display());
     }
 
     if config.config.submit.test_before_submit && !force {
@@ -67,21 +67,24 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
 
     let client = AtCoderClient::new(&config.config.atcoder)?;
     if !client.load_session()? {
-        bail!("ログインしていません。`acrust login` を実行してください");
+        bail!("not logged in. Run `acrust login`");
     }
     let user = auth::current_user(&client)?
-        .context("セッションが無効です。`acrust login` をやり直してください")?;
-    ui::field("ログイン", &user);
+        .context("the session is not valid. Run `acrust login` again")?;
+    ui::field("login", &user);
 
     let submit_url = format!("https://atcoder.jp/contests/{}/submit", package.contest);
     let page = client.get(&submit_url)?;
     page.error_for_status()?;
     let csrf_token = crate::atcoder::html::csrf_token(&page.body)
-        .context("提出ページから csrf_token を取り出せませんでした")?;
+        .context("could not find csrf_token on the submit page")?;
 
     let pattern = config.config.submit.language_pattern.clone();
     let language = choose_language(&config, &page.body, &screen_name, &pattern)?;
-    ui::field("言語", &format!("{} (id={})", language.name, language.id));
+    ui::field(
+        "language",
+        &format!("{} (id={})", language.name, language.id),
+    );
 
     let form = submit_form(
         &page.body,
@@ -103,27 +106,27 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
         Some(location) => {
             // 言語 ID が古いと弾かれる。キャッシュを捨てて次回に備える。
             let _ = cache::forget_language(&pattern);
-            bail!("提出が受理されませんでした（{location} に飛ばされました）");
+            bail!("the submission was not accepted (redirected to {location})");
         }
         None => {
             let _ = cache::forget_language(&pattern);
             report_rejection(&response, auth::has_captcha(&page.body));
-            bail!("提出が受理されませんでした");
+            bail!("the submission was not accepted");
         }
     };
 
     let listing = client.get(&location)?;
     listing.error_for_status()?;
     let submission = parse::parse_latest_submission(&listing.body)
-        .context("提出一覧から自分の提出を見つけられませんでした")?;
+        .context("could not find your submission in the list")?;
     if !submission.task.is_empty() && submission.task != screen_name {
         ui::warn(&format!(
-            "提出一覧の先頭が別の問題（{}）でした。ブラウザで確認してください",
+            "the newest submission is for a different problem ({}). Check in your browser",
             submission.task
         ));
     }
     let url = submission.url(&package.contest);
-    ui::ok(&format!("提出しました  {}  {url}", submission.verdict));
+    ui::ok(&format!("submitted  {}  {url}", submission.verdict));
 
     if no_watch || !config.config.submit.watch {
         return Ok(ExitCode::SUCCESS);
@@ -172,20 +175,18 @@ fn report_rejection(response: &crate::atcoder::client::AtCoderResponse, page_had
         // 隠しフィールド `cf-turnstile-response` はブラウザ上の JS が差し込むので、
         // 素の POST では csrf_token が正しくても弾かれる（`/login` と同じ塞がれ方）。
         // 開催中の提出はこれまでどおり通る。
-        ui::warn(
-            "コンテストが終了しているため、submitは実行できません。copyを用いて手動で提出をお願いします",
-        );
+        ui::warn("the contest is over, so submit cannot run. Use copy and submit it by hand");
         return;
     }
-    ui::warn(&format!("AtCoder の応答: {}", response.status));
+    ui::warn(&format!("AtCoder replied: {}", response.status));
     for alert in crate::atcoder::html::alerts(&response.body) {
         ui::warn_detail(&alert);
     }
     if crate::atcoder::html::user_screen_name(&response.body).is_none() {
-        ui::warn_detail("この応答ではログインしていない扱いになっています");
-        ui::warn_detail("`acrust login` でセッションを取り直してください");
+        ui::warn_detail("this reply treats you as logged out");
+        ui::warn_detail("run `acrust login` to get a fresh session");
     } else {
-        ui::warn_detail("ブラウザから同じ問題に提出できるか確かめてください");
+        ui::warn_detail("check whether the same submission works from your browser");
     }
 }
 
@@ -199,13 +200,13 @@ fn test_first(
     let path = config.testcases_path(&package_rel, &resolved.bin.alias);
     if !path.is_file() {
         ui::warn(&format!(
-            "{} がありません。テストせずに提出します",
+            "{} is missing, so submitting without testing",
             path.display()
         ));
         return Ok(None);
     }
     if TestSuite::load(&path)?.kind == SuiteKind::Interactive {
-        ui::warn("インタラクティブ問題なのでサンプルテストは省きます");
+        ui::warn("interactive problem, so skipping the sample tests");
         return Ok(None);
     }
 
@@ -213,7 +214,7 @@ fn test_first(
     if code == ExitCode::SUCCESS {
         return Ok(None);
     }
-    ui::error("サンプルテストが通らなかったので提出しません（-f で無視できます）");
+    ui::error("the sample tests did not pass, so not submitting (-f overrides this)");
     Ok(Some(ExitCode::FAILURE))
 }
 
@@ -228,7 +229,7 @@ fn choose_language(
     if !configured.is_empty() {
         return Ok(Language {
             id: configured.to_owned(),
-            name: format!("(設定で指定: {configured})"),
+            name: format!("(set in the config: {configured})"),
         });
     }
     if let Some(cached) = cache::language_for(pattern) {
@@ -290,17 +291,17 @@ fn watch(
             }
             Ok(response) => {
                 failures += 1;
-                ui::warn(&format!("結果の取得に失敗しました（{}）", response.status));
+                ui::warn(&format!("could not get the result ({})", response.status));
             }
             Err(e) => {
                 failures += 1;
-                ui::warn(&format!("結果の取得に失敗しました: {e:#}"));
+                ui::warn(&format!("could not get the result: {e:#}"));
             }
         }
 
         if failures >= MAX_CONSECUTIVE_FAILURES {
             ui::warn(&format!(
-                "結果の追跡をやめます。ブラウザで確認してください: {url}"
+                "giving up on following the result. Check in your browser: {url}"
             ));
             return ExitCode::SUCCESS;
         }
@@ -309,7 +310,7 @@ fn watch(
 
     // ジャッジが混んで長引くときは、ブラウザで見た方が早い。
     ui::info(&format!(
-        "{} 秒たっても確定しなかったので追跡をやめます: {url}",
+        "no verdict after {} seconds, so no longer following it: {url}",
         config.config.submit.watch_timeout_s
     ));
     ExitCode::SUCCESS
@@ -335,20 +336,17 @@ fn confirm(resolved: &Resolved, package: &Package) -> Result<bool> {
 
     if !std::io::stdin().is_terminal() {
         bail!(
-            "問題を推定しましたが確認できません（対話端末ではありません）。\
-             `acrust submit {}` のように問題を指定してください",
+            "inferred a problem but cannot confirm it (not a terminal). \
+             Name the problem, as in `acrust submit {}`",
             resolved.bin.alias
         );
     }
-    print!(
-        "{} {} を提出します。よろしいですか？ [y/N]: ",
-        package.contest, resolved.bin.alias
-    );
+    print!("Submit {} {}? [y/N]: ", package.contest, resolved.bin.alias);
     std::io::stdout().flush().ok();
     let mut answer = String::new();
     std::io::stdin()
         .read_line(&mut answer)
-        .context("標準入力を読めませんでした")?;
+        .context("could not read stdin")?;
     Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
 }
 

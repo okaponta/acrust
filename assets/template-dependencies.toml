@@ -1,10 +1,10 @@
-# AtCoder のジャッジ環境と完全に一致する [dependencies]（決定 D6）。
+# [dependencies] matching AtCoder's judge environment exactly.
 #
-# このファイルは `acrust env update` が AtCoder の言語アップデート情報から自動生成する。
-# 手で削っても構わない（env update は上書き前に diff を見せる）。
+# `acrust env update` generates this file.
+# Trimming it by hand is fine; env update shows a diff before overwriting.
 #
-# 環境: 2025-10 / Rust (rustc 1.89.0)
-# 出典: https://img.atcoder.jp/file/language-update/2025-10/088-1-82-0_rustc.toml
+# Environment: 2025-10 / Rust (rustc 1.89.0)
+# Source:      https://img.atcoder.jp/file/language-update/2025-10/088-1-82-0_rustc.toml
 
 # 202411から:
 rpds = "=1.1.1"

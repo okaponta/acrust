@@ -11,7 +11,7 @@ pub fn run(problem: Option<String>) -> Result<()> {
         Some(query) => {
             let bin = package
                 .find_bin(query)
-                .with_context(|| format!("問題 {query} が {} にありません", package.name))?;
+                .with_context(|| format!("{} has no problem {query}", package.name))?;
             vec![bin.alias.clone()]
         }
         // 引数なしなら全問。
