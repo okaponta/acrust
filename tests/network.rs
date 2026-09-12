@@ -49,14 +49,18 @@ fn the_login_form_is_still_behind_a_captcha() {
     );
 }
 
-/// **提出フォームにも Turnstile が入っている**（2026-09-12 に実地確認）。
+/// **終了したコンテストの提出フォームには Turnstile が入っている**（2026-09-12 に実地確認）。
 ///
-/// これがある限り、素の POST での提出は csrf_token が正しくても
-/// 「エラーが発生しました。」で弾かれる。`/login` と同じ sitekey・同じ塞がれ方で、
-/// acrust は CAPTCHA を迂回しないので `submit` はブラウザに渡す形になる。
+/// AtCoder は 2025-03 に Cloudflare Turnstile を入れ、**コンテスト終了後**の提出にも
+/// これを出すようになった。`/login` と同じ sitekey で、隠しフィールド
+/// `cf-turnstile-response` はブラウザ上の JS が差し込むため、素の POST は
+/// csrf_token が正しくても「エラーが発生しました。」で弾かれる。
 ///
-/// このテストが**落ちたら** AtCoder が提出から CAPTCHA を外したということなので、
-/// `acrust submit` の自動提出を復活できる。そのための見張り。
+/// **開催中の提出はコマンドから通る**ので、`acrust submit` は現役のまま。
+/// ここで見張っているのは「終了後も塞がれたままか」だけ。
+///
+/// `practice` は常設なので常に「終了後」と同じ扱いになる。これが**落ちたら**
+/// AtCoder が終了後の提出から CAPTCHA を外したということ。
 ///
 /// セッションが要る（`ACRUST_SESSION_FILE` か既定の保存先）。未ログインなら飛ばす。
 #[test]
@@ -80,6 +84,6 @@ fn the_submit_form_is_still_behind_a_captcha() {
     );
     assert!(
         auth::has_captcha(&response.body),
-        "提出フォームから Turnstile が消えている。自動提出を復活できるか検討する"
+        "終了後の提出フォームから Turnstile が消えている。README の注意書きを見直す"
     );
 }
