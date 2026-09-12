@@ -67,7 +67,7 @@ pub fn migrate_at(root: &Path, write: bool) -> Result<Summary> {
     }
 
     let plan = Plan::build(root, packages)?;
-    plan.report(&compete);
+    plan.report(&compete, write);
     let summary = plan.summary();
 
     if write {
@@ -210,42 +210,46 @@ impl Plan {
         }
     }
 
-    fn report(&self, compete: &CompeteConfig) {
+    /// 書き換えの内容は `--write` のときだけ出す。
+    /// 下見では 1 バイトも触らないので、何を作る・消すと並べても読む意味がない。
+    fn report(&self, compete: &CompeteConfig, write: bool) {
         let bins: usize = self.packages.iter().map(|p| p.bins.len()).sum();
         let files: usize = self.packages.iter().map(|p| p.suites.len()).sum();
         ui::info("");
         ui::section("移行の内容");
         ui::field("パッケージ", &format!("{} 個", self.packages.len()));
-        ui::field("bin", &format!("{bins} 本（問題 URL は全件一致）"));
+        ui::field("bin", &format!("{bins} 本"));
         ui::field(
             "テストケース",
-            &format!("{files} ファイル / {} ケース（往復検証ずみ）", self.cases),
+            &format!("{files} ファイル / {} ケース", self.cases),
         );
-        ui::field(
-            "設定",
-            ".acrust/config.toml と .acrust/template/ を作ります",
-        );
-        if compete.template_src.is_some() {
+        if write {
             ui::field(
-                "テンプレート",
-                "compete.toml の src を template/main.rs に切り出します",
+                "設定",
+                ".acrust/config.toml と .acrust/template/ を作ります",
+            );
+            if compete.template_src.is_some() {
+                ui::field(
+                    "テンプレート",
+                    "compete.toml の src を template/main.rs に切り出します",
+                );
+            }
+            if compete.cargo_lock.is_some() {
+                ui::field(
+                    "Cargo.lock",
+                    "template-cargo-lock.toml を template/Cargo.lock にします",
+                );
+            }
+            ui::field(
+                "削除",
+                "compete.toml / template-cargo-lock.toml / testcases/*.yml",
             );
         }
-        if compete.cargo_lock.is_some() {
-            ui::field(
-                "Cargo.lock",
-                "template-cargo-lock.toml を template/Cargo.lock にします",
-            );
-        }
-        ui::field(
-            "削除",
-            "compete.toml / template-cargo-lock.toml / testcases/*.yml",
-        );
         if let Some(language_id) = &compete.language_id {
             ui::info("");
             ui::warn(&format!(
                 "compete.toml の language_id = \"{language_id}\" は引き継ぎません。\
-                 acrust は提出ページから自動判定します（実測でも現在の ID は違います）"
+                 acrust は提出ページから自動判定します"
             ));
         }
     }

@@ -64,7 +64,7 @@ pub fn update(language_list: Option<String>, yes: bool) -> Result<()> {
     ui::ok(&format!("{} に合わせました", environment.display));
     if dependencies_changed {
         ui::info("");
-        ui::info("依存が変わったので、次のビルドは一度だけ時間がかかります（実測 30 秒ほど）");
+        ui::info("依存が変わったので、次のビルドだけ 30 秒ほどかかります");
     }
     Ok(())
 }
@@ -74,7 +74,8 @@ struct Plan {
     dependencies: env::DependencyDiff,
     edition: Option<(String, String)>,
     toolchain: Option<(String, String)>,
-    lock_changes: bool,
+    /// `Cargo.lock` を書き換えるときの行数（いま / これから）。いま無ければ `None`。
+    lock: Option<(Option<usize>, usize)>,
     language_list: Option<String>,
 }
 
@@ -109,15 +110,13 @@ impl Plan {
             )
         });
 
-        let lock_changes = match lock {
-            Some(lock) => {
-                std::fs::read_to_string(config.template_cargo_lock())
-                    .ok()
-                    .as_deref()
-                    != Some(lock)
-            }
-            None => false,
-        };
+        // 1682 行の差分をそのまま見せても読めないので、何行から何行になるかだけ出す。
+        let current_lock = std::fs::read_to_string(config.template_cargo_lock()).ok();
+        let lock = lock
+            .filter(|lock| current_lock.as_deref() != Some(lock))
+            .map(|lock| -> (Option<usize>, usize) {
+                (current_lock.as_deref().map(count_lines), count_lines(lock))
+            });
 
         let language_list =
             requested_list.filter(|_| config.config.atcoder.language_list != list_url);
@@ -126,7 +125,7 @@ impl Plan {
             dependencies,
             edition,
             toolchain,
-            lock_changes,
+            lock,
             language_list,
         })
     }
@@ -135,7 +134,7 @@ impl Plan {
         self.dependencies.is_empty()
             && self.edition.is_none()
             && self.toolchain.is_none()
-            && !self.lock_changes
+            && self.lock.is_none()
             && self.language_list.is_none()
     }
 
@@ -148,8 +147,12 @@ impl Plan {
         if let Some((before, after)) = &self.edition {
             ui::field("edition", &format!("{before} → {after}"));
         }
-        if self.lock_changes {
-            ui::field("Cargo.lock", "更新あり");
+        if let Some((before, after)) = &self.lock {
+            let before = match before {
+                Some(lines) => format!("{lines} 行"),
+                None => "なし".to_owned(),
+            };
+            ui::field("Cargo.lock", &format!("{before} → {after} 行"));
         }
         if let Some(url) = &self.language_list {
             ui::field("language-list", url);
@@ -191,7 +194,7 @@ impl Plan {
             write(&path, &render_dependencies(environment, config))?;
             ui::field("更新", &display(config, &path));
         }
-        if self.lock_changes {
+        if self.lock.is_some() {
             if let Some(lock) = lock {
                 let path = config.template_cargo_lock();
                 write(&path, lock)?;
@@ -245,6 +248,11 @@ fn update_config(config: &LoadedConfig, edition: &str, language_list: Option<&st
     }
     std::fs::write(&config.path, document.to_string())
         .with_context(|| format!("{} に書けませんでした", config.path.display()))
+}
+
+/// 末尾に改行がある / ない両方で同じ数になるように数える。
+fn count_lines(text: &str) -> usize {
+    text.lines().count()
 }
 
 fn current_toolchain(path: &Path) -> Option<String> {
