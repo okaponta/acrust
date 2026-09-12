@@ -1,7 +1,7 @@
-//! ランナーのテスト（設計 §4.7）。
+//! Runner tests.
 //!
-//! `rustc` で小さな被験プログラムを1つ作り、入力で振る舞いを変えて
-//! AC / WA / RE / TLE と、出力が多いときの挙動を確かめる。
+//! `rustc` builds one small subject program whose behaviour follows its input,
+//! which covers AC / WA / RE / TLE and what happens when a solution writes a lot.
 
 use acrust::judge::Verdict;
 use acrust::runner;
@@ -11,7 +11,7 @@ use std::process::Command;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-/// 入力の1行目で振る舞いを変える被験プログラム。
+/// The subject program. Its first line of input decides what it does.
 const SUBJECT: &str = r#"
 use std::io::{Read, Write};
 
@@ -23,7 +23,7 @@ fn main() {
         "wrong" => println!("different"),
         "panic" => panic!("boom"),
         "loop" => loop { std::hint::black_box(0); },
-        // 標準出力を読まずに待つと、パイプが詰まって止まる。
+        // Enough output to block on the pipe if nobody is draining it.
         "big" => {
             let stdout = std::io::stdout();
             let mut out = stdout.lock();
@@ -32,7 +32,7 @@ fn main() {
             }
         }
         "noisy" => {
-            eprintln!("警告らしきもの");
+            eprintln!("something that looks like a warning");
             println!("expected");
         }
         other => println!("{other}"),
@@ -40,14 +40,15 @@ fn main() {
 }
 "#;
 
-/// テストを直列化する。
+/// Serialises these tests.
 ///
-/// 各テストが `rustc` を起動し、そのうち1つは実行時間を測る。並列に走らせると
-/// 計測がマシンの busy さに引きずられて、コードは正しいのにテストが落ちる。
+/// Each one starts `rustc`, and one of them measures elapsed time. Run in
+/// parallel, that measurement follows how busy the machine is and the test fails
+/// on correct code.
 static SERIAL: Mutex<()> = Mutex::new(());
 
 fn serial() -> MutexGuard<'static, ()> {
-    // 他のテストが失敗して毒されていても、このロックの意味は変わらない。
+    // A poisoned lock here means another test failed, not that this one can't run.
     SERIAL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -83,8 +84,8 @@ fn subject() -> Subject {
         .arg(&executable)
         .arg(&source)
         .status()
-        .expect("rustc を起動できること");
-    assert!(status.success(), "被験プログラムのビルドに失敗した");
+        .expect("rustc should be runnable");
+    assert!(status.success(), "the subject program did not build");
 
     Subject { dir, executable }
 }
@@ -128,11 +129,11 @@ fn each_verdict_is_reported_for_the_right_reason() {
         ]
     );
 
-    // 結果は実行順ではなくテストケースの順で返る。
+    // Results come back in the order of the cases, not of the runs.
     let names: Vec<&str> = outcomes.iter().map(|o| o.name.as_str()).collect();
     assert_eq!(names, ["ac", "wa", "re", "tle"]);
 
-    // RE では終了状態とパニックの内容が見える。
+    // An RE shows both how it died and what it said.
     assert!(outcomes[2].status.is_some());
     assert!(
         outcomes[2].stderr.contains("boom"),
@@ -140,7 +141,7 @@ fn each_verdict_is_reported_for_the_right_reason() {
         outcomes[2].stderr
     );
 
-    // TLE は打ち切りまで待つが、待ちすぎない。
+    // A TLE waits for the cutoff, and not much longer.
     assert!(outcomes[3].elapsed >= Duration::from_millis(600));
     assert!(outcomes[3].elapsed < Duration::from_millis(2000));
 }
@@ -148,7 +149,7 @@ fn each_verdict_is_reported_for_the_right_reason() {
 #[test]
 fn a_program_that_writes_a_lot_does_not_look_like_a_timeout() {
     let _serial = serial();
-    // 標準出力を読まずに待つ実装だと、パイプが詰まってここが TLE になる。
+    // An implementation that waits without draining stdout reports this as TLE.
     let subject = subject();
     let cases = vec![case("big", "big", "")];
     let outcomes = runner::run_cases(
@@ -162,11 +163,11 @@ fn a_program_that_writes_a_lot_does_not_look_like_a_timeout() {
     assert_eq!(
         outcomes[0].verdict,
         Verdict::WrongAnswer,
-        "TLE ではないこと"
+        "should not be a TLE"
     );
     assert!(
         outcomes[0].stdout.len() > 8_000_000,
-        "出力が全部取れていること"
+        "the whole output should come back"
     );
 }
 
@@ -184,12 +185,14 @@ fn stderr_is_kept_even_when_the_case_passes() {
         None,
     );
     assert_eq!(outcomes[0].verdict, Verdict::Accepted);
-    assert!(outcomes[0].stderr.contains("警告らしきもの"));
+    assert!(outcomes[0]
+        .stderr
+        .contains("something that looks like a warning"));
 }
 
-/// 同じ内容を別のパスに置いた、まだ一度も実行していない実行ファイル。
+/// The same binary at a path that has never been executed.
 ///
-/// macOS の初回実行コストはパス（inode）ごとに掛かるので、コピーすれば冷えた状態に戻せる。
+/// macOS pays the first-run cost per inode, so a copy is cold again.
 fn cold_copy(subject: &Subject, name: &str) -> PathBuf {
     let copy = subject.dir.join(name);
     std::fs::copy(&subject.executable, &copy).unwrap();
@@ -211,8 +214,9 @@ fn time_one_run(executable: &std::path::Path) -> Duration {
 #[test]
 fn timing_is_not_inflated_by_the_first_execution() {
     let _serial = serial();
-    // ビルドし直した直後の初回実行は macOS で 300ms 以上かかる（署名の検証とページイン）。
-    // ウォームアップを入れていないと、その値が1回目の計測にそのまま載る。
+    // The first run of a freshly built binary costs upwards of 300ms on macOS —
+    // signature checking and paging in. Without the warm-up, that lands whole on
+    // the first measurement.
     let subject = subject();
     let cold = cold_copy(&subject, "subject-cold");
 
@@ -232,14 +236,13 @@ fn timing_is_not_inflated_by_the_first_execution() {
         .iter()
         .map(|o| o.elapsed)
         .min()
-        .expect("ケースがある");
+        .expect("there is at least one case");
 
-    // ここまで来れば同じ実行ファイルは確実に温まっている。
-    // 同じ負荷の下で測り直した値を基準にすれば、マシンの busy さに左右されない。
+    // By now the binary is certainly warm. Measuring again under the same load
+    // gives a baseline that does not depend on how busy the machine is.
     let reference = time_one_run(&cold).min(time_one_run(&cold));
     assert!(
         measured <= reference * 4 + Duration::from_millis(80),
-        "計測値 {measured:?} が、温まった状態の {reference:?} に比べて大きすぎる。\
-         ウォームアップが効いていない"
+        "measured {measured:?} against a warm {reference:?}: the warm-up is not working"
     );
 }

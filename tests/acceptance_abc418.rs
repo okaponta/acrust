@@ -1,18 +1,17 @@
-//! M2 の受け入れテスト（設計 §6）。
+//! Acceptance test against real pages.
 //!
-//! `~/repos/atcoder-rust/abc418/testcases/*.yml` は cargo-compete が 2025-08 に取得した
-//! 実データで、そのまま正解データとして使える。acrust が同じ HTML から取り出した
-//! 入出力例が **バイト単位で一致する**ことを確認する。
+//! `abc418/testcases/*.yml` in a cargo-compete repository was fetched from
+//! AtCoder in 2025-08 and serves as the answer key: what acrust reads out of the
+//! same HTML has to match it byte for byte.
 //!
-//! `live` feature が付いていないとビルドもされない。リポジトリ外のファイルに依存する
-//! ためで（CI では走らない）、AtCoder の問題文をこのリポジトリに持ち込まないための
-//! 措置でもある（設計 §5.3）。
+//! Not compiled without the `live` feature, because it reads files from outside
+//! the repository — which is also how AtCoder's problem statements stay out of it.
 //!
 //! ```console
 //! $ cargo test --features live --test acceptance_abc418 -- --nocapture
 //! ```
 //!
-//! パスは `ACRUST_FIXTURES` / `ACRUST_REFERENCE_REPO` で差し替えられる。
+//! `ACRUST_FIXTURES` and `ACRUST_REFERENCE_REPO` override where it looks.
 
 use acrust::atcoder::scrape;
 use acrust::testcases::{Matching, SuiteKind, TestSuite};
@@ -36,9 +35,9 @@ fn reference_repo() -> PathBuf {
         .into()
 }
 
-/// cargo-compete が書いた YAML から、ケース名と入出力だけを読む。
+/// Reads case names and data out of the YAML cargo-compete wrote.
 ///
-/// この形（ブロックスカラー `|` のみ）に特化した最小の読み取りで、汎用の YAML ではない。
+/// The least parser that handles this one shape (block scalars only). Not YAML.
 fn parse_reference_yaml(text: &str) -> (String, Vec<(String, String, String)>) {
     let mut kind = String::new();
     let mut cases: Vec<(String, String, String)> = Vec::new();
@@ -73,7 +72,7 @@ fn parse_reference_yaml(text: &str) -> (String, Vec<(String, String, String)>) {
                 block.push_str(next.strip_prefix("      ").unwrap_or(""));
                 block.push('\n');
             }
-            // ブロックスカラー `|` は末尾の空行を1つの改行に畳む。
+            // A `|` block scalar collapses its trailing blank lines to one.
             let block = format!("{}\n", block.trim_end_matches('\n'));
             if let Some(case) = current.as_mut() {
                 if slot == 1 {
@@ -96,7 +95,7 @@ fn the_samples_match_cargo_competes_own_output_byte_for_byte() {
     let reference = reference_repo().join("abc418/testcases");
     if !fixtures.is_dir() || !reference.is_dir() {
         eprintln!(
-            "skip: fixtures={} reference={} のどちらかがありません",
+            "skip: need both fixtures={} and reference={}",
             fixtures.display(),
             reference.display()
         );
@@ -107,7 +106,7 @@ fn the_samples_match_cargo_competes_own_output_byte_for_byte() {
     let entries = scrape::parse_task_list(&tasks, "abc418").unwrap();
     let printed = std::fs::read_to_string(fixtures.join("abc418_tasks_print.html")).unwrap();
     let pages = scrape::parse_tasks_print(&printed).unwrap();
-    assert_eq!(entries.len(), pages.len(), "問題数が一致しない");
+    assert_eq!(entries.len(), pages.len(), "different number of problems");
 
     let by_alias: BTreeMap<&str, &scrape::ProblemPage> = entries
         .iter()
@@ -121,67 +120,67 @@ fn the_samples_match_cargo_competes_own_output_byte_for_byte() {
         let yaml = std::fs::read_to_string(reference.join(format!("{}.yml", entry.alias))).unwrap();
         let (kind, expected) = parse_reference_yaml(&yaml);
 
-        assert_eq!(kind, "Batch", "{}: 想定外の type", entry.alias);
+        assert_eq!(kind, "Batch", "{}: unexpected type", entry.alias);
         assert_eq!(
             page.samples.len(),
             expected.len(),
-            "{}: ケース数が違う",
+            "{}: different number of cases",
             entry.alias
         );
 
         for (i, (sample, (name, want_in, want_out))) in
             page.samples.iter().zip(&expected).enumerate()
         {
-            assert_eq!(name, &format!("sample{}", i + 1), "{}: 名前", entry.alias);
+            assert_eq!(name, &format!("sample{}", i + 1), "{}: name", entry.alias);
             assert_eq!(
                 &sample.input, want_in,
-                "{} の {name} の入力が一致しない",
+                "{}: input of {name} differs",
                 entry.alias
             );
             assert_eq!(
                 &sample.output, want_out,
-                "{} の {name} の出力が一致しない",
+                "{}: output of {name} differs",
                 entry.alias
             );
             checked_cases += 1;
         }
 
-        // 誤差ジャッジの検出結果も cargo-compete と一致すること。
+        // Float judging has to be detected exactly where cargo-compete found it.
         let expected_float = yaml.contains("Float");
         assert_eq!(
             page.float.is_some(),
             expected_float,
-            "{}: 誤差ジャッジの判定が違う",
+            "{}: disagrees about float judging",
             entry.alias
         );
         if expected_float {
             let float = page.float.unwrap();
-            assert_eq!(float.absolute, Some(1e-9), "{}: 絶対誤差", entry.alias);
-            assert_eq!(float.relative, None, "{}: 相対誤差", entry.alias);
+            assert_eq!(float.absolute, Some(1e-9), "{}: absolute", entry.alias);
+            assert_eq!(float.relative, None, "{}: relative", entry.alias);
         }
 
-        // 制限時間も一致すること（E は 4 秒、F は 3 秒）。
+        // And the time limits: E is 4 seconds here, F is 3.
         let want_tl = yaml
             .lines()
             .find_map(|l| l.strip_prefix("timelimit: "))
             .map(|s| s.trim().to_owned());
         let got_tl = entry.timelimit_ms.map(acrust::testcases::format_duration);
-        assert_eq!(got_tl, want_tl, "{}: 制限時間", entry.alias);
+        assert_eq!(got_tl, want_tl, "{}: time limit", entry.alias);
     }
 
     println!(
-        "abc418: {} 問 / {checked_cases} ケースがバイト単位で一致",
+        "abc418: {} problems / {checked_cases} cases match byte for byte",
         entries.len()
     );
     assert_eq!(checked_cases, 18);
 }
 
-/// 取り出したものを TOML にして読み直しても、1 バイトも変わらないこと。
+/// Writing what was scraped as TOML and reading it back changes not one byte.
 #[test]
 fn the_generated_toml_round_trips_the_real_samples() {
     let fixtures = fixtures();
     if !fixtures.is_dir() {
-        eprintln!("skip: {} がありません", fixtures.display());
+        eprintln!("skip: {} is not there", fixtures.display());
         return;
     }
     let printed = std::fs::read_to_string(fixtures.join("abc418_tasks_print.html")).unwrap();
@@ -208,8 +207,8 @@ fn the_generated_toml_round_trips_the_real_samples() {
         assert_eq!(parsed.kind, SuiteKind::Batch);
         assert_eq!(parsed.cases.len(), suite.cases.len(), "{}", page.label);
         for (got, want) in parsed.cases.iter().zip(&suite.cases) {
-            assert_eq!(got.input, want.input, "{} の {}", page.label, want.name);
-            assert_eq!(got.output, want.output, "{} の {}", page.label, want.name);
+            assert_eq!(got.input, want.input, "{} {}", page.label, want.name);
+            assert_eq!(got.output, want.output, "{} {}", page.label, want.name);
         }
     }
 }

@@ -1,7 +1,9 @@
-# 合成 fixture
+# Synthetic fixtures
 
-**AtCoder の実 HTML をここに置かないこと**（設計 §5.3）。問題文の著作権は AtCoder と作問者にある。
+**Do not put real AtCoder HTML here.** The problem statements are the copyright of
+AtCoder and of the people who wrote them.
 
-パーサのテストに必要なのは HTML の構造であって問題文ではないので、構造だけを写した
-ダミー問題を置いている。実物は手元の `kyopro/acrust-fixtures/` にあり、
-`tests/acceptance_abc418.rs`（`#[ignore]`）がそちらを見る。
+What the parser tests need is the structure of the pages, not the statements, so
+these are dummy problems copying the structure and nothing else. Real pages live
+outside the repository and are read by `tests/acceptance_abc418.rs`, which is
+compiled only under the `live` feature.

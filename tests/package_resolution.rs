@@ -1,6 +1,7 @@
-//! 実際の `Cargo.toml` に対するパッケージ・問題解決の検証（設計 §4.6 / §4.8）。
+//! Package and problem resolution, against real `Cargo.toml` files.
 //!
-//! `acrust new`（M2）が生成する形をここで先に固定しておく。ネットワークは使わない。
+//! This pins down the shape `acrust new` generates. Nothing here touches the
+//! network.
 
 use acrust::config::ResolveMode;
 use acrust::workspace::{resolve_problem, Origin, Package};
@@ -19,7 +20,7 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-/// bin の mtime を基準時刻からのオフセット（秒）で明示的に設定する。
+/// Sets each bin's mtime explicitly, as an offset in seconds from a fixed base.
 fn set_mtimes(package_dir: &Path, offsets: &[(&str, u64)]) {
     let base = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
     for (alias, offset) in offsets {
@@ -32,7 +33,8 @@ fn set_mtimes(package_dir: &Path, offsets: &[(&str, u64)]) {
     }
 }
 
-/// `acrust new abc042` が作る想定の形。C・D が ARC 側を指す実在のケースを使う。
+/// What `acrust new abc042` produces. A real contest, whose C and D point at the
+/// ARC held alongside it.
 fn write_package(dir: &Path) {
     std::fs::create_dir_all(dir.join("src/bin")).unwrap();
     std::fs::write(
@@ -95,7 +97,7 @@ fn reads_bins_and_task_screen_names_from_the_manifest() {
     );
     assert_eq!(package.bins[2].name, "abc042-c");
 
-    // 導出できない対応（abc042 の C = arc058_a）がメタデータから引けること。
+    // C of abc042 is arc058_a, and only the metadata can say so.
     assert_eq!(
         package.task_url("c").unwrap(),
         "https://atcoder.jp/contests/abc042/tasks/arc058_a"
@@ -142,8 +144,8 @@ fn the_most_recently_edited_bin_wins() {
     let package_dir = root.join("abc042");
     write_package(&package_dir);
 
-    // c.rs だけ書き換える。mtime は明示的に設定する。
-    // 4 ファイルの書き込みが同じ時刻に収まる環境があり、暗黙の順序には頼れない。
+    // Edit c.rs, then set the mtimes by hand: on some machines all four writes
+    // land in the same timestamp, and the implied order cannot be relied on.
     std::fs::write(
         package_dir.join("src/bin/c.rs"),
         "fn main() { /* solved */ }\n",
@@ -158,7 +160,7 @@ fn the_most_recently_edited_bin_wins() {
     assert_eq!(
         resolved.describe(&package),
         "abc042 c (src/bin/c.rs)",
-        "推定したら対象を必ず表示できること"
+        "an inferred problem has to be printable"
     );
 
     std::fs::remove_dir_all(&root).unwrap();
@@ -189,7 +191,7 @@ path = "src/bin/a.rs"
     .unwrap();
     std::fs::write(package_dir.join("src/bin/a.rs"), TEMPLATE).unwrap();
 
-    // 未移行のパッケージは黙って動かさず、移行を案内して落とす（決定 D4）。
+    // An unmigrated package fails with instructions rather than half-working.
     let err = Package::load(&package_dir.join("Cargo.toml"))
         .unwrap_err()
         .to_string();
@@ -204,7 +206,7 @@ fn a_tie_on_the_newest_mtime_is_ambiguous_rather_than_arbitrary() {
     let package_dir = root.join("abc042");
     write_package(&package_dir);
 
-    // c と d を編集したが、保存時刻が同じだった場合。
+    // Both c and d were edited, and saved within the same timestamp.
     for alias in ["c", "d"] {
         std::fs::write(
             package_dir.join(format!("src/bin/{alias}.rs")),

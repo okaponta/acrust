@@ -1,7 +1,7 @@
-//! `acrust migrate` の統合テスト（設計 §4.8）。
+//! Integration tests for `acrust migrate`.
 //!
-//! 合成した cargo-compete リポジトリを作って移行し、
-//! 「情報が失われていないこと」と「往復検証が実際に止めること」を確かめる。
+//! A synthetic cargo-compete repository is built and migrated, to check both that
+//! nothing is lost and that the round-trip check really does stop the migration.
 
 use acrust::commands::migrate;
 use acrust::testcases::{Matching, SuiteKind, TestSuite};
@@ -21,7 +21,7 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-/// cargo-compete が実際に作る形（`~/repos/atcoder-rust` を写したもの）。
+/// The shape cargo-compete actually produces, copied from a real repository.
 fn repo(name: &str) -> Repo {
     let root = std::env::temp_dir().join(format!(
         "acrust-migrate-{name}-{}-{:?}",
@@ -62,7 +62,7 @@ language_id = "5054"
         "# lock\nversion = 3\n",
     );
 
-    // ABC/ARC 併催回。C と D の問題 URL が別コンテストを指す。
+    // An ABC held alongside an ARC: C and D point at the other contest.
     write(
         &root.join("abc042/Cargo.toml"),
         r#"[package]
@@ -83,7 +83,7 @@ name = "abc042-c"
 path = "src/bin/c.rs"
 
 [dependencies]
-# 手で足したもの
+# added by hand
 proconio = "=0.4.5"
 "#,
     );
@@ -93,13 +93,13 @@ proconio = "=0.4.5"
         &root.join("abc042/testcases/a.yml"),
         "---\ntype: Batch\ntimelimit: 2s\nmatch: Lines\n\ncases:\n  - name: sample1\n    in: |\n      3\n      1 2 3\n    out: |\n      6\n\nextend:\n  - type: Text\n    path: \"./a\"\n    in: /in/*.txt\n    out: /out/*.txt\n",
     );
-    // 誤差ジャッジ。相対誤差が書かれていない実例に合わせる。
+    // Float judging, shaped after a real problem that names no relative bound.
     write(
         &root.join("abc042/testcases/c.yml"),
         "---\ntype: Batch\ntimelimit: 2s 500ms\nmatch:\n  Float:\n    relative_error: ~\n    absolute_error: 1e-9\n\ncases:\n  - name: sample1\n    in: |\n      2\n    out: |\n      0.500000000\n",
     );
 
-    // インタラクティブ問題。ケースが無い。
+    // An interactive problem, which has no cases.
     write(
         &root.join("abc244/Cargo.toml"),
         r#"[package]
@@ -138,7 +138,7 @@ fn a_dry_run_writes_nothing() {
     assert_eq!(summary.files, 3);
     assert_eq!(summary.cases, 2);
 
-    assert_eq!(walk(root), before, "下見なのに何か書き換わっている");
+    assert_eq!(walk(root), before, "a dry run wrote something");
     assert!(!root.join(".acrust").exists());
 }
 
@@ -148,32 +148,35 @@ fn migrating_keeps_every_piece_of_information() {
     let root = &repo.0;
     migrate::migrate_at(root, true).unwrap();
 
-    // 設定とテンプレートが移っている。
+    // The config and the templates have moved across.
     assert!(root.join(".acrust/config.toml").is_file());
     let template = std::fs::read_to_string(root.join(".acrust/template/main.rs")).unwrap();
     assert!(template.contains("println!(\"template\")"), "{template}");
     let dependencies =
         std::fs::read_to_string(root.join(".acrust/template/dependencies.toml")).unwrap();
-    assert!(dependencies.contains("=0.4.5"), "既存の依存を持ち越すこと");
+    assert!(
+        dependencies.contains("=0.4.5"),
+        "existing dependencies carry over"
+    );
     assert_eq!(
         std::fs::read_to_string(root.join(".acrust/template/Cargo.lock")).unwrap(),
         "# lock\nversion = 3\n"
     );
 
-    // 設定の edition は compete.toml のものを引き継ぐ（既存パッケージと揃える）。
+    // The edition comes from compete.toml, to match the packages already there.
     let config = acrust::config::LoadedConfig::load(root).unwrap();
     assert_eq!(config.config.package.edition, "2021");
-    // 言語 ID は引き継がない。自動判定に任せる。
+    // The language id is not carried over; acrust reads it off the submit page.
     assert!(config.config.submit.language_id.is_empty());
 
-    // cargo-compete の痕跡が消えている。
+    // Nothing of cargo-compete is left behind.
     assert!(!root.join("compete.toml").exists());
     assert!(!root.join("template-cargo-lock.toml").exists());
     assert!(walk(root)
         .iter()
         .all(|p| p.extension().and_then(|e| e.to_str()) != Some("yml")));
 
-    // 導出できない問題 URL が保たれている。
+    // The problem URL that cannot be derived survived the move.
     let package = Package::load(&root.join("abc042/Cargo.toml")).unwrap();
     assert_eq!(package.contest, "abc042");
     assert_eq!(
@@ -185,12 +188,12 @@ fn migrating_keeps_every_piece_of_information() {
         "https://atcoder.jp/contests/abc042/tasks/abc042_a"
     );
 
-    // 手で足した依存とコメントは残っている。
+    // The hand-added dependency and its comment are still there.
     let manifest = std::fs::read_to_string(root.join("abc042/Cargo.toml")).unwrap();
-    assert!(manifest.contains("# 手で足したもの"), "{manifest}");
+    assert!(manifest.contains("# added by hand"), "{manifest}");
     assert!(!manifest.contains("cargo-compete"), "{manifest}");
 
-    // テストケースの中身が保たれている。
+    // The cases themselves came through unchanged.
     let a = TestSuite::load(&root.join("abc042/testcases/a.toml")).unwrap();
     assert_eq!(a.kind, SuiteKind::Batch);
     assert_eq!(a.timelimit.as_deref(), Some("2s"));
@@ -202,7 +205,7 @@ fn migrating_keeps_every_piece_of_information() {
     assert_eq!(c.timelimit.as_deref(), Some("2500ms"));
     let float = c.float.unwrap();
     assert_eq!(float.absolute_error, Some(1e-9));
-    assert_eq!(float.relative_error, None, "書かれていない側は設定しない");
+    assert_eq!(float.relative_error, None, "a bound not named stays unset");
 
     let interactive = TestSuite::load(&root.join("abc244/testcases/c.toml")).unwrap();
     assert_eq!(interactive.kind, SuiteKind::Interactive);
@@ -214,7 +217,7 @@ fn migrating_twice_is_refused_rather_than_doing_half_the_work() {
     let repo = repo("twice");
     let root = &repo.0;
     migrate::migrate_at(root, true).unwrap();
-    // compete.toml が消えているので、2 回目は入口で止まる。
+    // compete.toml is gone, so the second run stops at the front door.
     assert!(migrate::migrate_at(root, true).is_err());
 }
 
@@ -222,7 +225,7 @@ fn migrating_twice_is_refused_rather_than_doing_half_the_work() {
 fn an_unreadable_testcase_stops_everything_before_writing() {
     let repo = repo("broken");
     let root = &repo.0;
-    // snowchains が書かない形の行を混ぜる。
+    // Slip in a line snowchains would never write.
     write(
         &root.join("abc042/testcases/a.yml"),
         "---\ntype: Batch\ntimelimit: 2s\nmatch: Lines\nsurprise: yes\n",
@@ -234,14 +237,14 @@ fn an_unreadable_testcase_stops_everything_before_writing() {
         "{err}"
     );
 
-    // 1 件でも読めなければ何も書かない。
-    assert!(!root.join(".acrust").exists(), "中途半端に書き換えている");
+    // One unreadable file means nothing at all is written.
+    assert!(!root.join(".acrust").exists(), "wrote a half-migration");
     assert!(root.join("compete.toml").is_file());
     assert!(root.join("abc042/testcases/c.yml").is_file());
     let manifest = std::fs::read_to_string(root.join("abc042/Cargo.toml")).unwrap();
     assert!(
         manifest.contains("cargo-compete"),
-        "メタデータを書き換えている"
+        "the metadata was rewritten"
     );
 }
 

@@ -1,16 +1,16 @@
-//! AtCoder を実際に叩くテスト。
+//! Tests that talk to the live AtCoder.
 //!
-//! `live` feature が付いていないとビルドもされない（CI では走らない）。
-//! `#[ignore]` ではなく feature にしているのは、普段の `cargo test` の結果に
-//! "ignored" として並ばないようにするため。
+//! Without the `live` feature they are not even compiled, so CI never runs them.
+//! A feature rather than `#[ignore]`, so an ordinary `cargo test` does not report
+//! a row of ignored tests that nobody intends to run.
 //!
-//! 手元で確認するとき:
+//! To run them:
 //!
 //! ```console
 //! $ cargo test --features live --test network -- --test-threads=1
 //! ```
 //!
-//! リクエスト間隔はクライアント側で 1 秒以上空く（設計 §3.6）。
+//! The client spaces the requests a second apart on its own.
 
 use acrust::atcoder::{auth, html, AtCoderClient};
 use acrust::config::AtcoderConfig;
@@ -21,10 +21,10 @@ fn the_login_page_still_exposes_the_csrf_token_and_the_screen_name() {
     let response = client.get(auth::LOGIN_URL).unwrap();
     response.error_for_status().unwrap();
 
-    let token = html::csrf_token(&response.body)
-        .expect("var csrfToken / hidden input のどちらかから取れること");
+    let token =
+        html::csrf_token(&response.body).expect("from var csrfToken or from the hidden input");
     assert!(!token.is_empty());
-    // 未ログインなら userScreenName は空。
+    // Logged out, userScreenName is empty.
     assert_eq!(html::user_screen_name(&response.body), None);
 }
 
@@ -34,10 +34,10 @@ fn an_anonymous_client_is_not_logged_in() {
     assert_eq!(auth::current_user(&client).unwrap(), None);
 }
 
-/// ID / パスワードでのログインを塞いでいる当の Turnstile が、まだそこにあるか。
+/// Whether the Turnstile that rules out id / password login is still there.
 ///
-/// これが落ちたら AtCoder が CAPTCHA を外したということなので、
-/// ID / パスワードでのログインを復活させられる（`atcoder::auth` 参照）。
+/// If this fails, AtCoder has dropped the CAPTCHA and password login could come
+/// back; see `atcoder::auth`.
 #[test]
 fn the_login_form_is_still_behind_a_captcha() {
     let client = AtCoderClient::new(&AtcoderConfig::default()).unwrap();
@@ -45,29 +45,31 @@ fn the_login_form_is_still_behind_a_captcha() {
     response.error_for_status().unwrap();
     assert!(
         auth::has_captcha(&response.body),
-        "Turnstile が消えている。ID / パスワードでのログインを検討できる"
+        "Turnstile is gone; id / password login is worth reconsidering"
     );
 }
 
-/// **終了したコンテストの提出フォームには Turnstile が入っている**（2026-09-12 に実地確認）。
+/// The submit form of a finished contest carries Turnstile too — confirmed
+/// against the live site on 2026-09-12.
 ///
-/// AtCoder は 2025-03 に Cloudflare Turnstile を入れ、**コンテスト終了後**の提出にも
-/// これを出すようになった。`/login` と同じ sitekey で、隠しフィールド
-/// `cf-turnstile-response` はブラウザ上の JS が差し込むため、素の POST は
-/// csrf_token が正しくても「エラーが発生しました。」で弾かれる。
+/// Since March 2025 AtCoder shows the widget on submissions after a contest ends,
+/// with the same sitekey as `/login`. The hidden `cf-turnstile-response` field is
+/// filled in by the browser's JS, so a plain POST is refused however correct its
+/// csrf_token.
 ///
-/// **開催中の提出はコマンドから通る**ので、`acrust submit` は現役のまま。
-/// ここで見張っているのは「終了後も塞がれたままか」だけ。
+/// Submitting during a contest still works from the command line, so this watches
+/// one thing only: whether the door stays shut after the contest.
 ///
-/// `practice` は常設なので常に「終了後」と同じ扱いになる。これが**落ちたら**
-/// AtCoder が終了後の提出から CAPTCHA を外したということ。
+/// `practice` is permanent, which makes it behave like a finished contest at any
+/// hour. If this test fails, AtCoder has taken the CAPTCHA off post-contest
+/// submissions.
 ///
-/// セッションが要る（`ACRUST_SESSION_FILE` か既定の保存先）。未ログインなら飛ばす。
+/// Needs a session (`ACRUST_SESSION_FILE`, or the usual place). Skips without one.
 #[test]
 fn the_submit_form_is_still_behind_a_captcha() {
     let client = AtCoderClient::new(&AtcoderConfig::default()).unwrap();
     if !client.load_session().unwrap() {
-        eprintln!("skip: ログインしていないので提出フォームを見られません");
+        eprintln!("skip: not logged in, so the submit form is out of reach");
         return;
     }
     let response = client
@@ -75,15 +77,15 @@ fn the_submit_form_is_still_behind_a_captcha() {
         .unwrap();
     response.error_for_status().unwrap();
     if html::user_screen_name(&response.body).is_none() {
-        eprintln!("skip: セッションが無効です");
+        eprintln!("skip: the session is not valid");
         return;
     }
     assert!(
         response.body.contains("form-code-submit"),
-        "提出フォームが見つからない"
+        "the submit form is not where it used to be"
     );
     assert!(
         auth::has_captcha(&response.body),
-        "終了後の提出フォームから Turnstile が消えている。README の注意書きを見直す"
+        "Turnstile is gone from a finished contest's submit form; revisit the note in the README"
     );
 }

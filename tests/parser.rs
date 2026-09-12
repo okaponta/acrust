@@ -1,7 +1,8 @@
-//! パーサのテスト（設計 §6 の M2 要件）。
+//! Parser tests.
 //!
-//! fixture は **構造だけを写した合成 HTML**。AtCoder の問題文は入っていない（設計 §5.3）。
-//! 実データに対する突き合わせは `tests/acceptance_abc418.rs`（`#[ignore]`）が行う。
+//! The fixtures are synthetic HTML copying only the structure of the real pages;
+//! no AtCoder problem text is checked in. Parsing against real pages happens in
+//! `tests/acceptance_abc418.rs`.
 
 use acrust::atcoder::scrape::{self, ProblemPage};
 
@@ -21,15 +22,15 @@ fn the_task_list_keeps_screen_names_that_do_not_follow_the_naming_rule() {
 
     assert_eq!(entries[0].alias, "a");
     assert_eq!(entries[0].screen_name, "dummy001_a");
-    assert_eq!(entries[0].title, "Alpha & Beta", "実体参照が戻っていない");
+    assert_eq!(entries[0].title, "Alpha & Beta", "entities are not decoded");
     assert_eq!(entries[0].timelimit_ms, Some(2000));
 
-    // C が別コンテストの問題を指す（abc042 の C が arc058_a になる類）。
+    // C points at another contest's problem, as abc042's C points at arc058_a.
     assert_eq!(entries[2].label, "C");
     assert_eq!(entries[2].screen_name, "other999_a");
-    assert_eq!(entries[2].timelimit_ms, Some(2500), "小数の制限時間");
+    assert_eq!(entries[2].timelimit_ms, Some(2500), "fractional time limit");
 
-    // Ex 問題は alias も ex になる。
+    // An Ex problem gets `ex` as its alias.
     assert_eq!(entries[3].label, "Ex");
     assert_eq!(entries[3].alias, "ex");
     assert_eq!(entries[3].screen_name, "dummy001_h");
@@ -58,13 +59,16 @@ fn every_problem_on_the_print_page_is_found() {
 fn samples_come_from_the_japanese_statement_and_ignore_the_input_format_block() {
     let problems = problems();
     let a = &problems[0];
-    // 「入力」（書式の説明）の <pre> を拾ってしまうと 3 ケースになる。
+    // Picking up the <pre> of the input-format section would make this 3.
     assert_eq!(a.samples.len(), 2);
     assert_eq!(a.samples[0].input, "3\n1 2 3\n");
-    assert_eq!(a.samples[0].output, "6\n", "解説の <p> を巻き込んでいない");
+    assert_eq!(
+        a.samples[0].output, "6\n",
+        "an explanatory <p> was dragged in"
+    );
     assert_eq!(a.samples[1].input, "1\n5\n");
     assert_eq!(a.samples[1].output, "5\n");
-    // lang-en 側の値（999）が混ざっていないこと。
+    // Nothing from the lang-en half (999) leaked in.
     assert!(a.samples.iter().all(|s| !s.input.contains("999")));
     assert_eq!(a.timelimit_ms, Some(2000));
 }
@@ -72,8 +76,8 @@ fn samples_come_from_the_japanese_statement_and_ignore_the_input_format_block() 
 #[test]
 fn an_error_bound_in_the_statement_becomes_a_float_judgement() {
     let b = &problems()[1];
-    let float = b.float.expect("誤差ジャッジとして検出されること");
-    // 「絶対誤差が 10^{-9} 以下」なので、相対誤差は設定しない。
+    let float = b.float.expect("should be detected as float-judged");
+    // The statement names only an absolute bound, so relative stays unset.
     assert_eq!(float.absolute, Some(1e-9));
     assert_eq!(float.relative, None);
     assert_eq!(b.timelimit_ms, Some(4000));
@@ -83,7 +87,7 @@ fn an_error_bound_in_the_statement_becomes_a_float_judgement() {
 fn an_interactive_problem_is_marked_and_has_no_pairs() {
     let c = &problems()[2];
     assert!(c.interactive);
-    assert!(c.samples.is_empty(), "入出力例はペアにならない");
+    assert!(c.samples.is_empty(), "an interactive problem has no pairs");
     assert_eq!(c.timelimit_ms, Some(2500));
 }
 
@@ -91,25 +95,28 @@ fn an_interactive_problem_is_marked_and_has_no_pairs() {
 fn an_old_problem_without_the_lang_wrapper_still_parses() {
     let ex = &problems()[3];
     assert_eq!(ex.samples.len(), 1);
-    assert_eq!(ex.samples[0].input, "1 < 2\n", "実体参照が戻っていない");
+    assert_eq!(ex.samples[0].input, "1 < 2\n", "entities are not decoded");
     assert_eq!(ex.samples[0].output, "Yes\n");
     assert!(!ex.interactive);
-    assert!(ex.float.is_none(), "問題文の < > を誤差と読み違えていない");
+    assert!(
+        ex.float.is_none(),
+        "a < > in the statement is not an error bound"
+    );
 }
 
 #[test]
 fn an_english_only_problem_is_parsed_and_paired_by_number() {
     let problems = scrape::parse_tasks_print(&fixture("tasks_print_english.html")).unwrap();
     let a = &problems[0];
-    // 出現順は 2 が先だが、番号でペアにして並べ直す。
+    // Case 2 comes first on the page; pairing is by number, not by order.
     assert_eq!(a.samples.len(), 2);
     assert_eq!(a.samples[0].input, "4\n");
     assert_eq!(a.samples[0].output, "4.0000000\n");
     assert_eq!(a.samples[1].input, "7\n");
     assert_eq!(a.samples[1].output, "7.0000000\n");
 
-    // 英語の「absolute or relative error ... 10^{-6}」も拾う。
-    let float = a.float.expect("誤差ジャッジ");
+    // The English "absolute or relative error ... 10^{-6}" is read too.
+    let float = a.float.expect("should be detected as float-judged");
     assert_eq!(float.absolute, Some(1e-6));
     assert_eq!(float.relative, Some(1e-6));
     assert_eq!(a.timelimit_ms, Some(3000));
