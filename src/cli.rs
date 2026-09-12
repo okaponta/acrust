@@ -1,4 +1,4 @@
-//! コマンド体系（設計 §4.1）。エントリポイントは `acrust` の1本のみ（決定 D1）。
+//! The command surface. One entry point, `acrust`, and no others.
 
 use crate::commands;
 use anyhow::Result;

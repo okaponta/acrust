@@ -1,21 +1,21 @@
-//! クリップボードへのコピー。`acrust copy` が使う。
+//! Copying to the clipboard, for `acrust copy`.
 //!
-//! `arboard` のようなクレートを入れず外部コマンドを叩くのは、Linux で X11 / Wayland の
-//! 開発パッケージを要求されるため。AtCoder 用の CLI に持ち込むには重い。
-//! ブラウザ起動（`browser`）と同じ割り切り。
+//! An external command rather than a crate like `arboard`: on Linux those pull in
+//! X11 / Wayland development packages, which is a lot to ask of anyone installing
+//! a CLI for AtCoder. Same trade as `browser`.
 
 use anyhow::{bail, Context as _, Result};
 use std::io::Write as _;
 use std::process::{Command, Stdio};
 
-/// この順に試して、最初に動いたものを使う。
+/// Tried in order; the first one that runs wins.
 fn candidates() -> &'static [(&'static str, &'static [&'static str])] {
     if cfg!(target_os = "macos") {
         &[("pbcopy", &[])]
     } else if cfg!(target_os = "windows") {
         &[("clip", &[])]
     } else {
-        // Wayland → X11 の順。環境によってどちらか片方しか入っていない。
+        // Wayland before X11; a given desktop usually has only one of them.
         &[
             ("wl-copy", &[]),
             ("xclip", &["-selection", "clipboard"]),
@@ -24,7 +24,7 @@ fn candidates() -> &'static [(&'static str, &'static [&'static str])] {
     }
 }
 
-/// `text` をクリップボードに入れる。戻り値は実際に使ったコマンド名。
+/// Puts `text` on the clipboard, returning the command that did it.
 pub fn copy(text: &str) -> Result<&'static str> {
     for (command, args) in candidates() {
         if run(command, args, text)? {
@@ -38,7 +38,7 @@ pub fn copy(text: &str) -> Result<&'static str> {
     )
 }
 
-/// コマンドが見つからなければ `Ok(false)`。見つかって失敗したときはエラー。
+/// `Ok(false)` when the command is not installed; an error when it is and failed.
 fn run(command: &str, args: &[&str], text: &str) -> Result<bool> {
     let mut child = match Command::new(command)
         .args(args)
@@ -48,7 +48,7 @@ fn run(command: &str, args: &[&str], text: &str) -> Result<bool> {
         .spawn()
     {
         Ok(child) => child,
-        // 入っていないだけなら次の候補へ。
+        // Not installed is not a failure; try the next candidate.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e).with_context(|| format!("could not start {command}")),
     };
@@ -58,7 +58,7 @@ fn run(command: &str, args: &[&str], text: &str) -> Result<bool> {
         stdin
             .write_all(text.as_bytes())
             .with_context(|| format!("could not write to {command}"))?;
-        // ここで drop されて EOF が伝わる。閉じないと相手が読み終わらない。
+        // Dropped here so the child sees EOF; without it, it never stops reading.
     }
 
     let status = child
@@ -79,16 +79,16 @@ mod tests {
         assert!(!candidates().is_empty());
     }
 
-    /// 入っていないコマンドはエラーではなく「次を試す」になること。
+    /// A command that is not installed moves on to the next, it does not fail.
     #[test]
     fn a_missing_command_is_not_an_error() {
         assert!(!run("acrust-no-such-clipboard-command", &[], "x").unwrap());
     }
 
-    /// 実際に往復させて中身が一致すること。
+    /// A real round trip through the system clipboard.
     ///
-    /// **手元のクリップボードを書き換える**ので `live` を付けたときだけ走らせる
-    /// （`cargo test` のたびにコピー中のものが消えるのは困る）。
+    /// Behind `live` because it overwrites whatever the user had copied, and
+    /// losing that on every `cargo test` would be its own small disaster.
     #[cfg(all(target_os = "macos", feature = "live"))]
     #[test]
     fn macos_copies_through_pbcopy() {

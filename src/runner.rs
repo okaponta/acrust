@@ -1,8 +1,9 @@
-//! ビルドと、テストケースの実行（設計 §4.7）。
+//! Building, and running the test cases.
 //!
-//! 実行ファイルのパスは推測せず、`cargo build --message-format=json` が
-//! 報告する `executable` をそのまま使う。`.cargo/config.toml` の `target-dir` や
-//! ワークスペースの配置に左右されない。
+//! The path to the executable is never guessed: it is whatever
+//! `cargo build --message-format=json` reports as `executable`. That holds up
+//! against a `target-dir` in `.cargo/config.toml` and against any workspace
+//! layout.
 
 use crate::config::Profile;
 use crate::judge::Verdict;
@@ -15,7 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// 1 ケースの結果。
+/// The result of one case.
 #[derive(Debug, Clone)]
 pub struct Outcome {
     pub name: String,
@@ -23,11 +24,11 @@ pub struct Outcome {
     pub elapsed: Duration,
     pub stdout: String,
     pub stderr: String,
-    /// 異常終了したときの説明（`exit status: 101`、`signal: 6` など）。
+    /// How it died, when it did: `exit code 101`, `killed by signal 6`.
     pub status: Option<String>,
 }
 
-/// `cargo build --bin {bin}` を1回だけ実行し、できた実行ファイルのパスを返す。
+/// Builds once and returns the executable cargo says it produced.
 pub fn build(manifest_path: &Path, bin: &str, profile: Profile) -> Result<PathBuf> {
     let mut command = Command::new("cargo");
     command
@@ -36,7 +37,8 @@ pub fn build(manifest_path: &Path, bin: &str, profile: Profile) -> Result<PathBu
         .arg(manifest_path)
         .arg("--bin")
         .arg(bin)
-        // 診断は人間向けに stderr へ出しつつ、成果物の情報は JSON で受け取る。
+        // Diagnostics stay human-readable on stderr; only the artifact
+        // information comes back as JSON.
         .arg("--message-format=json-render-diagnostics")
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
@@ -60,7 +62,7 @@ pub fn build(manifest_path: &Path, bin: &str, profile: Profile) -> Result<PathBu
     executable.with_context(|| format!("cargo build did not report an executable for {bin}"))
 }
 
-/// ケースを並列に実行する。`jobs` が 0 なら論理コア数。
+/// Runs the cases in parallel. `jobs` of 0 means one per logical core.
 pub fn run_cases(
     executable: &Path,
     cases: &[TestCase],
@@ -93,22 +95,23 @@ pub fn run_cases(
         }
     });
 
-    // 実行は並列だが、表示はテストケースの順に揃える。
+    // Run in parallel, reported in the order the cases are written.
     let mut collected = collected.into_inner().expect("result list is not poisoned");
     collected.sort_by_key(|(index, _)| *index);
     collected.into_iter().map(|(_, outcome)| outcome).collect()
 }
 
-/// 計測の前に1回だけ空実行しておく。
+/// One throwaway run before anything is measured.
 ///
-/// macOS ではビルドし直した直後の初回実行に 300ms 以上かかる（署名の検証とページイン）。
-/// `acrust test` は必ずビルドの直後に走るので、これをやらないと**全ケースの計測値が
-/// 300ms 水増しされる**（並列に走るので全ケースが初回のコストを払う）。
+/// On macOS the first run of a freshly built binary takes upwards of 300ms —
+/// signature checking and paging in. `acrust test` always runs right after a
+/// build, and the cases run in parallel, so without this every case pays that
+/// cost and every measurement is inflated by it.
 ///
-/// 標準入力はすぐ閉じるので、入力を読む解答は即座に終わる。読まずに回り続ける解答のために
-/// 短い上限を掛けてある。結果は一切見ない。
+/// stdin is closed immediately, so a solution that reads input finishes at once;
+/// the short limit is for one that does not. The result is ignored.
 fn warm_up(executable: &Path) {
-    // 初回実行は実測で 300〜400ms。負荷が高いときのために少し余裕を持たせる。
+    // Measured at 300-400ms, with room to spare for a busy machine.
     const WARM_UP_LIMIT: Duration = Duration::from_secs(1);
 
     let Ok(mut child) = Command::new(executable)
@@ -173,9 +176,8 @@ fn run_case(
     }
 }
 
-/// RE のときに見たいのはパニックの位置とメッセージで、バックトレースは長いだけ。
-///
-/// 既定では出さないが、自分で `RUST_BACKTRACE` を立てている人の設定は尊重する。
+/// What you want from an RE is the panic's location and message; the backtrace is
+/// just long. It stays off unless the user set `RUST_BACKTRACE` themselves.
 fn backtrace_env() -> Option<(&'static str, &'static str)> {
     std::env::var_os("RUST_BACKTRACE")
         .is_none()
@@ -187,14 +189,14 @@ struct Run {
     stderr: String,
     elapsed: Duration,
     timed_out: bool,
-    /// 正常終了なら `None`。
+    /// `None` when it exited cleanly.
     status: Option<String>,
 }
 
-/// 標準入力を書き込み、標準出力と標準エラーを別スレッドで吸いながらタイムアウト付きで待つ。
+/// Feeds stdin and drains stdout and stderr on their own threads, with a timeout.
 ///
-/// パイプを読まずに待つと、出力の多い解答がバッファを埋めて止まり、
-/// 実際には速いのに TLE に見える。
+/// Waiting without draining is what makes a fast solution look like a TLE: fill
+/// the pipe buffer and the process blocks on its own output.
 fn execute(executable: &Path, input: &str, timeout: Duration) -> Result<Run> {
     let started = Instant::now();
     let mut child = Command::new(executable)
@@ -208,10 +210,10 @@ fn execute(executable: &Path, input: &str, timeout: Duration) -> Result<Run> {
     let mut stdin = child.stdin.take().context("could not take stdin")?;
     let payload = input.to_owned();
     let writer = std::thread::spawn(move || {
-        // 相手が先に終了して EPIPE になるのは異常ではない（入力を読み切らない解答）。
+        // EPIPE here is normal: plenty of solutions stop reading early.
         let _ = stdin.write_all(payload.as_bytes());
         let _ = stdin.flush();
-        // ここで drop されて EOF が伝わる。
+        // Dropped here, which is what sends EOF.
     });
 
     let mut stdout = child.stdout.take().context("could not take stdout")?;
@@ -259,12 +261,12 @@ fn execute(executable: &Path, input: &str, timeout: Duration) -> Result<Run> {
     })
 }
 
-/// 終了を待つ。`timeout` を過ぎたら `None`。
+/// Waits for the child, giving up at `timeout`.
 ///
-/// `wait-timeout` クレートを使わないのは、初回呼び出しに 190ms ほどの固定コストがあり
-/// （SIGCHLD まわりの初期化）、全ケースの計測値がその分だけ水増しされるため。
-/// ここでは短い間隔から始めて 2ms まで伸ばすポーリングにしている。
-/// 速いケースの誤差は 1ms 未満で、遅いケースでも待ちのコストは無視できる。
+/// Not the `wait-timeout` crate: its first call costs about 190ms setting up
+/// SIGCHLD handling, and that lands on every measurement. Polling from a short
+/// interval up to 2ms keeps the error on a fast case under a millisecond, and
+/// costs nothing worth counting on a slow one.
 fn wait_with_timeout(child: &mut Child, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
     const FIRST_INTERVAL: Duration = Duration::from_micros(200);
     const MAX_INTERVAL: Duration = Duration::from_millis(2);

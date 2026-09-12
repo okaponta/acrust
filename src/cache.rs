@@ -1,7 +1,8 @@
-//! `~/.cache/acrust/` に置く小さなキャッシュ。
+//! A small cache under `~/.cache/acrust/`.
 //!
-//! いまのところ言語 ID だけ。提出のたびに提出ページを取りに行かなくて済むが、
-//! 言語アップデートで ID は変わるので、提出が弾かれたら捨てて取り直す。
+//! Only the language id so far, which saves re-reading the submit page on every
+//! submission. The id changes with each language update, so a rejected
+//! submission throws the cached one away and looks it up again.
 
 use crate::atcoder::submit::Language;
 use crate::session;
@@ -14,7 +15,7 @@ const FILE: &str = "language-ids.json";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct LanguageCache {
-    /// language-pattern -> 選ばれた言語。
+    /// language-pattern -> the language it picked.
     #[serde(default)]
     languages: BTreeMap<String, Language>,
 }
@@ -40,7 +41,7 @@ pub fn remember_language(pattern: &str, language: &Language) -> Result<()> {
     write(&path, &cache)
 }
 
-/// 提出が弾かれたときに呼ぶ。次回は取り直す。
+/// Called when a submission is refused, so the next one looks the id up again.
 pub fn forget_language(pattern: &str) -> Result<()> {
     let path = path()?;
     let Some(mut cache) = std::fs::read_to_string(&path)

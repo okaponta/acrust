@@ -1,27 +1,27 @@
-//! `.acrust/config.toml` の読み込み。
+//! Reading `.acrust/config.toml`.
 //!
-//! 設定はリポジトリのルート（`.acrust/config.toml` を持つ最も近い祖先ディレクトリ）に置く。
-//! `acrust status` は読み込んだ config の絶対パスを必ず表示する。
+//! The config lives at the root of the repository — the nearest ancestor holding
+//! `.acrust/config.toml` — and `acrust status` always prints the absolute path of
+//! the one it read, so there is never a question of which file is in effect.
 
-// 設定項目とパス解決は M2〜M5 のコマンドが読む。M0/M1 では未参照のものがある。
+// Not every field is read by every command.
 #![allow(dead_code)]
 
 use anyhow::{bail, Context as _, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-/// `.acrust/` 直下に置くもの。
+/// What lives directly under `.acrust/`.
 pub const CONFIG_DIR: &str = ".acrust";
 pub const CONFIG_FILE: &str = "config.toml";
 
-/// このバイナリが理解できる `config.toml` の最大バージョン。
+/// The newest `config.toml` this binary understands.
 pub const SUPPORTED_VERSION: u32 = 1;
 
-/// AtCoder のジャッジ環境（2025-10）の rustc。`acrust env update` が追従させる。
+/// The rustc of AtCoder's 2025-10 judge environment. `acrust env update` moves
+/// these three on when AtCoder does.
 pub const DEFAULT_JUDGE_RUSTC: &str = "1.89.0";
-/// 同上の edition。
 pub const DEFAULT_JUDGE_EDITION: &str = "2024";
-/// 同上の言語一覧ページ。
 pub const DEFAULT_LANGUAGE_LIST: &str =
     "https://img.atcoder.jp/file/language-update/2025-10/language-list.html";
 
@@ -53,7 +53,7 @@ fn default_version() -> u32 {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ContestConfig {
-    /// コンテストパッケージの配置先。`{contest}` が展開される。
+    /// Where contest packages go. `{contest}` is substituted.
     #[serde(default = "default_contest_path")]
     pub path: String,
 }
@@ -73,13 +73,13 @@ impl Default for ContestConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PackageConfig {
-    /// 生成する `Cargo.toml` の edition。`env update` がジャッジ環境に追従させる。
+    /// The edition of a generated `Cargo.toml`, kept in step by `env update`.
     #[serde(default = "default_edition")]
     pub edition: String,
-    /// `rust-toolchain.toml` を生成・追従させるか。
+    /// Whether to write and maintain `rust-toolchain.toml`.
     #[serde(default = "default_true")]
     pub pin_toolchain: bool,
-    /// 生成する `Cargo.toml` に差し込む `[profile.*]`（生の TOML）。
+    /// Raw TOML spliced in as `[profile.*]`.
     #[serde(default = "default_profile")]
     pub profile: String,
 }
@@ -146,7 +146,8 @@ impl Default for TemplateConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct TestcasesConfig {
-    /// `{package}`（リポジトリルートからのパッケージ相対パス）と `{problem}`（alias）が展開される。
+    /// `{package}` (the package's path from the root) and `{problem}` (the alias)
+    /// are substituted.
     #[serde(default = "default_testcases_path")]
     pub path: String,
 }
@@ -170,15 +171,15 @@ pub enum Profile {
     Release,
 }
 
-/// 引数省略時の問題推定（決定 D7）。
+/// How to guess the problem when the argument is left off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ResolveMode {
-    /// `src/bin/*.rs` のうち mtime が最新のものを使う。
+    /// The most recently modified `src/bin/*.rs`.
     Mtime,
-    /// bin が 1 つのときだけ推定する。
+    /// Only when there is exactly one bin.
     Single,
-    /// 推定しない。
+    /// Never guess.
     Never,
 }
 
@@ -187,10 +188,10 @@ pub enum ResolveMode {
 pub struct TestConfig {
     #[serde(default = "default_test_profile")]
     pub profile: Profile,
-    /// 0 = 論理コア数。
+    /// 0 means one per logical core.
     #[serde(default)]
     pub jobs: usize,
-    /// 問題の TL に掛ける倍率。
+    /// Multiplier on the problem's time limit.
     #[serde(default = "default_timeout_margin")]
     pub timeout_margin: f64,
     #[serde(default = "default_resolve")]
@@ -221,10 +222,10 @@ impl Default for TestConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SubmitConfig {
-    /// 空なら提出ページの `<select>` から自動判定する（推奨）。
+    /// Empty reads the id off the submit page, which is the recommendation.
     #[serde(default)]
     pub language_id: String,
-    /// 自動判定に使う正規表現。
+    /// The regex that picks the language.
     #[serde(default = "default_language_pattern")]
     pub language_pattern: String,
     #[serde(default = "default_true")]
@@ -263,16 +264,16 @@ impl Default for SubmitConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct AtcoderConfig {
-    /// AtCoder の言語アップデート情報のページ。`env update` の入口。
+    /// AtCoder's language update page, where `env update` starts.
     #[serde(default = "default_language_list")]
     pub language_list: String,
-    /// リクエスト間隔の下限。AtCoder は実際に 429 を返してくる。
+    /// Floor on the gap between requests. AtCoder does return 429.
     #[serde(default = "default_request_interval")]
     pub request_interval_ms: u64,
-    /// 429 / 5xx のリトライ回数。
+    /// How many times to retry a 429 or 5xx.
     #[serde(default = "default_retry")]
     pub retry: u32,
-    /// `{version}` がこのバイナリのバージョンに展開される。
+    /// `{version}` becomes this binary's version.
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
 }
@@ -302,7 +303,7 @@ impl Default for AtcoderConfig {
 }
 
 impl AtcoderConfig {
-    /// `{version}` を展開した User-Agent。素性を明示するために必ず付ける。
+    /// The User-Agent actually sent. acrust always says what it is.
     pub fn resolved_user_agent(&self) -> String {
         self.user_agent
             .replace("{version}", env!("CARGO_PKG_VERSION"))
@@ -340,18 +341,18 @@ impl Config {
     }
 }
 
-/// 読み込み済みの設定と、その出どころ。
+/// A loaded config, and where it came from.
 #[derive(Debug, Clone)]
 pub struct LoadedConfig {
-    /// `.acrust/` を持つディレクトリ（＝リポジトリのルート）。
+    /// The directory holding `.acrust/`, i.e. the root of the repository.
     pub root: PathBuf,
-    /// 読み込んだ `config.toml` の絶対パス。
+    /// The absolute path of the `config.toml` that was read.
     pub path: PathBuf,
     pub config: Config,
 }
 
 impl LoadedConfig {
-    /// `start` から上に辿って `.acrust/config.toml` を探し、読み込む。
+    /// Walks up from `start` looking for `.acrust/config.toml`.
     pub fn find_from(start: &Path) -> Result<Self> {
         let root = find_root(start).with_context(|| {
             format!(
@@ -365,7 +366,6 @@ impl LoadedConfig {
         Self::load(&root)
     }
 
-    /// 現在のディレクトリから探す。
     pub fn find() -> Result<Self> {
         let cwd = std::env::current_dir().context("could not get the current directory")?;
         Self::find_from(&cwd)
@@ -384,7 +384,7 @@ impl LoadedConfig {
         })
     }
 
-    /// リポジトリルートからの相対パスを絶対パスにする。
+    /// Makes a path relative to the repository root absolute.
     pub fn resolve_path(&self, relative: &str) -> PathBuf {
         self.root.join(relative)
     }
@@ -409,14 +409,14 @@ impl LoadedConfig {
         self.root.join("rust-toolchain.toml")
     }
 
-    /// コンテスト `contest` のパッケージディレクトリ。
+    /// The package directory for a contest.
     pub fn contest_dir(&self, contest: &str) -> PathBuf {
         self.root.join(normalize_relative(
             &self.config.contest.path.replace("{contest}", contest),
         ))
     }
 
-    /// パッケージ `package_rel`（ルートからの相対パス）の問題 `problem` のテストケースファイル。
+    /// The test-case file for one problem of one package.
     pub fn testcases_path(&self, package_rel: &str, problem: &str) -> PathBuf {
         self.root.join(normalize_relative(
             &self
@@ -429,7 +429,8 @@ impl LoadedConfig {
     }
 }
 
-/// `./foo` の先頭 `./` を落とす。`Path::join` は `./` があっても動くが、表示が汚くなるため。
+/// Strips a leading `./`. `Path::join` copes with it; the paths acrust prints
+/// look better without it.
 fn normalize_relative(s: &str) -> String {
     s.strip_prefix("./").unwrap_or(s).to_owned()
 }
@@ -438,7 +439,7 @@ pub fn config_path(root: &Path) -> PathBuf {
     root.join(CONFIG_DIR).join(CONFIG_FILE)
 }
 
-/// `start` から上に辿って `.acrust/config.toml` を持つディレクトリを探す。
+/// The nearest ancestor of `start` holding `.acrust/config.toml`.
 pub fn find_root(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()

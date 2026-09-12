@@ -1,9 +1,9 @@
-//! セッション（`REVEL_SESSION` クッキー）の保存（決定 D8）。
+//! Storing the session (the `REVEL_SESSION` cookie).
 //!
-//! - 保存先は macOS / Linux とも `~/.local/share/acrust/session.json`
-//! - `ACRUST_SESSION_FILE` で上書きできる
-//! - **パーミッションは 0600 必須**。cargo-compete は 0644 で保存していた（設計 §3.8）
-//! - 保存するのはセッションクッキーだけで、パスワードは保存しない
+//! It lives at `~/.local/share/acrust/session.json` on both macOS and Linux, and
+//! `ACRUST_SESSION_FILE` overrides that. The cookie is the only thing written —
+//! never a password — and the file is always 0600: cargo-compete left the
+//! equivalent world-readable at 0644.
 
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
@@ -15,12 +15,12 @@ const ENV_OVERRIDE: &str = "ACRUST_SESSION_FILE";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
-    /// AtCoder のセッションクッキー。これ自体がパスワード同等の資格情報。
+    /// The AtCoder session cookie. As good as a password on its own.
     pub revel_session: String,
-    /// 保存時刻（UNIX 秒）。`status` の表示にだけ使う。
+    /// When it was saved, in UNIX seconds. Only ever displayed.
     #[serde(default)]
     pub saved_at: u64,
-    /// ログイン時に確認できたユーザー名。表示用。
+    /// The user name confirmed at login. Only ever displayed.
     #[serde(default)]
     pub user_screen_name: String,
 }
@@ -42,7 +42,7 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-/// セッションファイルの場所。`ACRUST_SESSION_FILE` があればそれを使う。
+/// Where the session file lives, honouring `ACRUST_SESSION_FILE`.
 pub fn session_path() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os(ENV_OVERRIDE) {
         return Ok(PathBuf::from(path));
@@ -50,13 +50,13 @@ pub fn session_path() -> Result<PathBuf> {
     Ok(data_dir()?.join("session.json"))
 }
 
-/// `~/.local/share/acrust`。macOS でも同じパスに統一する（決定 D8）。
+/// `~/.local/share/acrust`, on macOS as well: one path is easier to explain, and
+/// easier to tell someone to delete.
 pub fn data_dir() -> Result<PathBuf> {
     Ok(home_dir()?.join(".local").join("share").join("acrust"))
 }
 
-/// `~/.cache/acrust`。language ID などのキャッシュ置き場。
-// language ID のキャッシュ（M4）で使う。
+/// `~/.cache/acrust`, where the language id cache lives.
 #[allow(dead_code)]
 pub fn cache_dir() -> Result<PathBuf> {
     Ok(home_dir()?.join(".cache").join("acrust"))
@@ -101,7 +101,6 @@ pub fn save_to(path: &Path, session: &Session) -> Result<()> {
     Ok(())
 }
 
-/// セッションを破棄する。消したら true。
 pub fn discard() -> Result<Option<PathBuf>> {
     let path = session_path()?;
     if !path.exists() {
@@ -124,7 +123,8 @@ fn write_private(path: &Path, contents: &str) -> Result<()> {
         .open(path)?;
     file.write_all(contents.as_bytes())?;
     file.sync_all()?;
-    // 既存ファイルを開いた場合 `mode` は無視されるので、明示的に締め直す。
+    // `mode` applies only when the file is created, so an existing file has to
+    // be tightened explicitly.
     set_mode(path, 0o600)?;
     Ok(())
 }
@@ -156,7 +156,8 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
     })
 }
 
-/// 他ユーザーから読めるセッションファイルは資格情報の漏洩なので、警告して締め直す。
+/// A session file other users can read is a leaked credential, so it is reported
+/// and tightened rather than merely complained about.
 #[cfg(unix)]
 pub fn warn_and_fix_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
@@ -167,8 +168,8 @@ pub fn warn_and_fix_permissions(path: &Path) -> Result<()> {
         .mode()
         & 0o777;
     if mode & 0o077 != 0 {
-        // パスワード同等のものが他ユーザーから読める状態は放置できないので、
-        // 知らせたうえでこちらで締める（`chmod` を促すだけでは手遅れになりうる）。
+        // Telling the user to run `chmod` leaves the window open until they
+        // read the message, which may be never.
         crate::ui::warn(&format!(
             "the session file was readable by other users ({mode:o})"
         ));
@@ -186,7 +187,7 @@ pub fn warn_and_fix_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `status` 表示用。取得できないプラットフォームでは `None`。
+/// For `status`. `None` where the platform has no such thing.
 #[cfg(unix)]
 pub fn mode_of(path: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt as _;
@@ -215,7 +216,7 @@ mod tests {
     fn saves_with_mode_0600_even_over_a_world_readable_file() {
         let dir = temp_dir("session");
         let path = dir.join("session.json");
-        // 先に緩いパーミッションのファイルを置いておく。
+        // Put a loosely-permissioned file there first.
         std::fs::write(&path, "{}").unwrap();
         #[cfg(unix)]
         set_mode(&path, 0o644).unwrap();
@@ -243,7 +244,7 @@ mod tests {
 
     #[test]
     fn the_default_path_is_the_same_on_every_unix() {
-        // ACRUST_SESSION_FILE が無い状態のパス形をチェックする。
+        // The shape of the path when ACRUST_SESSION_FILE is not set.
         let dir = data_dir().unwrap();
         assert!(dir.ends_with(".local/share/acrust"), "{}", dir.display());
     }

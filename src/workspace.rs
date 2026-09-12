@@ -1,7 +1,7 @@
-//! コンテストパッケージと問題の解決（設計 §4.6）。
+//! Finding the contest package, and working out which problem is meant.
 //!
-//! 問題URL（task screen name）は `{contest}_{alias}` から導出できない（設計 §4.8）ため、
-//! `Cargo.toml` の `[package.metadata.acrust.tasks]` を唯一の正とする。
+//! A problem's URL cannot be derived from `{contest}_{alias}`, so
+//! `[package.metadata.acrust.tasks]` in `Cargo.toml` is the only authority on it.
 
 use crate::config::ResolveMode;
 use anyhow::{anyhow, bail, Context as _, Result};
@@ -9,14 +9,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-/// `acrust new` 直後かどうかを判定する mtime の許容差。
+/// How close two mtimes have to be to look like one `acrust new`.
 const FRESH_MTIME_SPREAD: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bin {
-    /// `[[bin]] name`（例: `abc474-c`）。
+    /// The `[[bin]] name`, e.g. `abc474-c`.
     pub name: String,
-    /// `src/bin/{alias}.rs` のファイル名（例: `c`）。
+    /// The file stem of `src/bin/{alias}.rs`, e.g. `c`.
     pub alias: String,
     pub src_path: PathBuf,
 }
@@ -26,15 +26,15 @@ pub struct Package {
     pub dir: PathBuf,
     pub manifest_path: PathBuf,
     pub name: String,
-    /// `[package.metadata.acrust] contest`。
+    /// `[package.metadata.acrust] contest`.
     pub contest: String,
-    /// alias -> task screen name（例: `c` -> `arc058_a`）。
+    /// alias -> task screen name, e.g. `c` -> `arc058_a`.
     pub tasks: BTreeMap<String, String>,
     pub bins: Vec<Bin>,
 }
 
 impl Package {
-    /// `start` から上に辿って `Cargo.toml` を探し、acrust のパッケージとして読み込む。
+    /// Walks up from `start` to a `Cargo.toml` and reads it as an acrust package.
     pub fn find_from(start: &Path) -> Result<Self> {
         let manifest_path = start
             .ancestors()
@@ -137,7 +137,7 @@ impl Package {
 
     pub fn find_bin(&self, query: &str) -> Option<&Bin> {
         let query = query.trim();
-        // "abc474-c" / "abc474_c" のような指定も alias 部分だけ見れば足りる。
+        // `abc474-c` and `abc474_c` are both just an alias with a prefix on it.
         let alias = query
             .rsplit(['-', '_'])
             .next()
@@ -158,8 +158,7 @@ impl Package {
             })
     }
 
-    /// 問題の URL。screen name はメタデータからしか引けない（設計 §4.8）。
-    // fetch / submit / open（M2 以降）が使う。
+    /// The problem's URL. Its screen name exists nowhere but the metadata.
     #[allow(dead_code)]
     pub fn task_url(&self, alias: &str) -> Result<String> {
         let screen_name = self.tasks.get(alias).ok_or_else(|| {
@@ -177,7 +176,8 @@ impl Package {
     }
 }
 
-/// 問題をどうやって決めたか。`submit` は推定時だけ y/N 確認を入れる（決定 D7）。
+/// How the problem was arrived at. `submit` asks for confirmation only when it
+/// was inferred.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
     Explicit,
@@ -191,7 +191,7 @@ pub struct Resolved {
 }
 
 impl Resolved {
-    /// `abc474 c (src/bin/c.rs)` のような表示。推定したときは必ず出す。
+    /// `abc474 c (src/bin/c.rs)`. Always printed when the problem was inferred.
     pub fn describe(&self, package: &Package) -> String {
         let src = self
             .bin
@@ -202,7 +202,7 @@ impl Resolved {
     }
 }
 
-/// 引数省略時の問題推定（設計 §4.6）。
+/// Works out which problem is meant, guessing when the argument was left off.
 pub fn resolve_problem(
     package: &Package,
     query: Option<&str>,
@@ -247,7 +247,8 @@ pub fn resolve_problem(
     }
 }
 
-/// `acrust new` 直後は 7 ファイルの mtime がほぼ同時刻になるため、推定を拒否する（設計 §4.6）。
+/// Refuses to guess right after `acrust new`, when every file was written within
+/// the same second and the newest one means nothing.
 fn resolve_by_mtime(package: &Package, template_src: Option<&str>) -> Result<Resolved> {
     let mut stats = Vec::with_capacity(package.bins.len());
     for bin in &package.bins {
@@ -278,8 +279,8 @@ fn resolve_by_mtime(package: &Package, template_src: Option<&str>) -> Result<Res
         .map(|(bin, _, _)| *bin)
         .collect();
 
-    // mtime が同着のときにどれかを黙って選ぶと、submit で別の問題を提出しかねない。
-    // 誤推定のコストが非対称なので（決定 D7）、決められないときは決められないと言う。
+    // Picking one of a tie silently is how `submit` sends the wrong problem.
+    // When there is no answer, say so rather than guess.
     if newest_bins.len() > 1 {
         bail!(
             "cannot tell which problem you mean ({} share an mtime). Name one",
@@ -312,9 +313,9 @@ fn is_freshly_generated(stats: &[(&Bin, SystemTime, String)], template_src: Opti
         return false;
     }
     match template_src {
-        // テンプレートが読めるなら「全部テンプレートのまま」を条件にする。
+        // With the template in hand, ask whether every file still equals it.
         Some(template) => stats.iter().all(|(_, _, src)| src == template),
-        // 読めないときは「全部同じ内容」で代用する。
+        // Without it, "all identical" is the closest available test.
         None => stats.windows(2).all(|w| w[0].2 == w[1].2),
     }
 }
@@ -367,7 +368,7 @@ mod tests {
     #[test]
     fn task_url_comes_from_metadata_not_from_the_alias() {
         let package = package();
-        // abc474 の C が arc058_a を指す、という導出できない対応を保てている。
+        // C of abc474 maps to arc058_a, and nothing but the metadata knows that.
         assert_eq!(
             package.task_url("c").unwrap(),
             "https://atcoder.jp/contests/abc474/tasks/arc058_a"
@@ -418,7 +419,7 @@ mod tests {
         assert!(is_freshly_generated(&stats, Some("TEMPLATE\n")));
         assert!(is_freshly_generated(&stats, None));
 
-        // 1 つでも編集されていれば推定してよい。
+        // One edited file is enough to make the newest mtime meaningful.
         let mut edited = stats.clone();
         edited[1].2 = "solved\n".to_owned();
         assert!(!is_freshly_generated(&edited, Some("TEMPLATE\n")));

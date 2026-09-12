@@ -1,15 +1,15 @@
-//! 既存の `Cargo.toml` に、足りない項目だけを足す。
+//! Adding the missing entries to an existing `Cargo.toml`, and nothing else.
 //!
-//! `toml_edit` を使うのは、ユーザーが手で足した依存やコメントを保つため
-//! （設計 D3 で TOML を選んだ理由そのもの）。丸ごと書き直すと、
-//! 開始前に作ったパッケージへ `fetch` で問題を足すたびに手編集が消える。
+//! `toml_edit` rather than a rewrite, so hand-added dependencies and comments
+//! survive. Re-rendering the file would wipe them out every time `fetch` adds a
+//! problem to a package that already exists.
 
 use crate::package::{bin_name, ProblemSpec};
 use anyhow::{Context as _, Result};
 use std::path::Path;
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
-/// 変更があれば書き戻して `true` を返す。
+/// Writes the file back only if something changed, and says whether it did.
 pub fn merge(path: &Path, contest: &str, problems: &[ProblemSpec]) -> Result<bool> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("could not read {}", path.display()))?;
@@ -29,7 +29,7 @@ pub fn merge(path: &Path, contest: &str, problems: &[ProblemSpec]) -> Result<boo
     Ok(changed)
 }
 
-/// `[package.metadata.acrust]` を（無ければ作って）返す。
+/// `[package.metadata.acrust]`, creating it if it is not there.
 fn acrust_table(document: &mut DocumentMut) -> &mut Table {
     let package = document
         .entry("package")
@@ -62,7 +62,8 @@ fn set_contest(document: &mut DocumentMut, contest: &str) -> bool {
     true
 }
 
-/// task screen name を足す。既にある対応は上書きしない（取り違えていたら手で直せる）。
+/// Records the task screen names. A value that was just read off AtCoder wins
+/// over whatever was there, since that is the one the URLs are built from.
 fn set_tasks(document: &mut DocumentMut, problems: &[ProblemSpec]) -> bool {
     let known: Vec<(&str, &str)> = problems
         .iter()
@@ -90,7 +91,8 @@ fn set_tasks(document: &mut DocumentMut, problems: &[ProblemSpec]) -> bool {
     changed
 }
 
-/// 未登録の問題ぶんだけ `[[bin]]` を足す。既存の順序と書式はそのまま。
+/// Appends a `[[bin]]` per unregistered problem, leaving the existing order and
+/// formatting alone.
 fn add_missing_bins(document: &mut DocumentMut, contest: &str, problems: &[ProblemSpec]) -> bool {
     let bins = document
         .entry("bin")
@@ -177,13 +179,13 @@ my-helper = "1.0"
         assert_eq!(acrust["tasks"]["a"].as_str(), Some("abc999_a"));
         assert_eq!(acrust["tasks"]["b"].as_str(), Some("abc999_b"));
 
-        // 開始前に無かった b の [[bin]] が足されている。
+        // b was not there before and now has its own [[bin]].
         let bins = parsed["bin"].as_array().unwrap();
         assert_eq!(bins.len(), 2);
         assert_eq!(bins[1]["name"].as_str(), Some("abc999-b"));
         assert_eq!(bins[1]["path"].as_str(), Some("src/bin/b.rs"));
 
-        // 手で足した依存とコメントが残っている。
+        // The hand-added dependency and its comment are still there.
         assert!(text.contains("# 手で足した依存"), "{text}");
         assert!(text.contains("my-helper = \"1.0\""), "{text}");
 
@@ -207,7 +209,7 @@ my-helper = "1.0"
     fn an_existing_screen_name_is_not_second_guessed() {
         let path = write("keep", SKELETON);
         merge(&path, "abc999", &problems(&[("a", Some("abc999_a"))])).unwrap();
-        // 取り違えを手で直した状態を再現する。
+        // Stand in for a screen name that was edited to something wrong.
         let text = std::fs::read_to_string(&path)
             .unwrap()
             .replace("abc999_a", "arc058_a");
@@ -218,7 +220,7 @@ my-helper = "1.0"
         assert_eq!(
             parsed["package"]["metadata"]["acrust"]["tasks"]["a"].as_str(),
             Some("abc999_a"),
-            "取得できた値が正なので上書きしてよい"
+            "what AtCoder just said wins over what was on disk"
         );
 
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();

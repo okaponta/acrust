@@ -1,7 +1,8 @@
-//! 出力の判定（設計 §4.7）。
+//! Deciding whether an answer is right.
 //!
-//! 判定モードは実データ（cargo-compete が書いた 2,716 ファイル）で必要十分を確認した
-//! 4 つだけ。複数解を許す問題は自動判定できないので、`match` を手で直す運用になる。
+//! Four matching modes, no more: 2,716 real test suites written by cargo-compete
+//! needed nothing else. A problem that accepts several answers cannot be judged
+//! automatically at all, so those get their `match` set by hand.
 
 use crate::testcases::{FloatTolerance, Matching};
 
@@ -9,7 +10,7 @@ use crate::testcases::{FloatTolerance, Matching};
 pub enum Verdict {
     Accepted,
     WrongAnswer,
-    /// 異常終了。パニックやシグナルを含む。
+    /// Died rather than finished: a panic or a signal.
     RuntimeError,
     TimeLimitExceeded,
 }
@@ -29,7 +30,6 @@ impl Verdict {
     }
 }
 
-/// 期待した出力と実際の出力が一致するか。
 pub fn matches(
     expected: &str,
     actual: &str,
@@ -44,7 +44,7 @@ pub fn matches(
     }
 }
 
-/// 各行を `trim_end` し、末尾の空行を落とす。
+/// Each line with its trailing whitespace gone, and no blank lines at the end.
 pub fn lines(text: &str) -> Vec<&str> {
     let mut lines: Vec<&str> = text.lines().map(|line| line.trim_end()).collect();
     while lines.last().is_some_and(|line| line.is_empty()) {
@@ -57,7 +57,8 @@ fn words(text: &str) -> Vec<&str> {
     text.split_whitespace().collect()
 }
 
-/// トークンごとに数値として比較する。数値でないトークンは文字列として比較する。
+/// Compares token by token as numbers, falling back to string equality for the
+/// tokens that are not numbers.
 fn float_match(expected: &str, actual: &str, tolerance: FloatTolerance) -> bool {
     let expected = words(expected);
     let actual = words(actual);
@@ -86,11 +87,11 @@ fn within(expected: f64, actual: f64, tolerance: FloatTolerance) -> bool {
     let relative_ok = tolerance
         .relative_error
         .is_some_and(|limit| difference <= limit * expected.abs());
-    // どちらも書かれていない問題は素の一致を求める（上で判定済み）。
+    // With neither bound given, only exact equality passes — handled above.
     absolute_ok || relative_ok
 }
 
-/// 期待と実際で最初に食い違う行の番号（0 始まり）。差分表示に使う。
+/// The first line where the two differ, zero-based, for the failure display.
 pub fn first_difference(expected: &str, actual: &str) -> Option<usize> {
     let expected = lines(expected);
     let actual = lines(actual);
@@ -115,12 +116,12 @@ mod tests {
         assert!(matches("Yes\n", "Yes", Matching::Lines, None));
         assert!(matches("Yes\n", "Yes  \n\n\n", Matching::Lines, None));
         assert!(matches("1\n2\n", "1\n2\n", Matching::Lines, None));
-        // 行の中身と行数の違いは見逃さない。
+        // Neither a different line nor a missing one slips through.
         assert!(!matches("1\n2\n", "1\n3\n", Matching::Lines, None));
         assert!(!matches("1\n2\n", "1\n", Matching::Lines, None));
         assert!(
             !matches("Yes\n", " Yes\n", Matching::Lines, None),
-            "行頭の空白は意味を持つ"
+            "leading whitespace is significant"
         );
     }
 
@@ -147,7 +148,7 @@ mod tests {
         ));
         assert!(!matches("0.5\n", "0.500001\n", Matching::Float, tolerance));
 
-        // 相対誤差しか書かれていない問題では、大きい値ほど許容が広がる。
+        // With only a relative bound, larger values get more room.
         let relative = float(Some(1e-6), None);
         assert!(matches(
             "1000000\n",
@@ -173,7 +174,7 @@ mod tests {
             Matching::Float,
             tolerance
         ));
-        // トークン数が違えば不一致。
+        // A different number of tokens is a mismatch.
         assert!(!matches("1.0\n", "1.0 1.0\n", Matching::Float, tolerance));
     }
 
@@ -188,7 +189,7 @@ mod tests {
         let tolerance = float(Some(1.0), Some(1.0));
         assert!(!matches("1.0\n", "inf\n", Matching::Float, tolerance));
         assert!(!matches("1.0\n", "NaN\n", Matching::Float, tolerance));
-        // 同じ文字列なら通す。
+        // Identical text still passes.
         assert!(matches("inf\n", "inf\n", Matching::Float, tolerance));
     }
 

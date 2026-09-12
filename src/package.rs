@@ -1,23 +1,23 @@
-//! コンテストパッケージの生成（設計 §4.3 / §4.8）。
+//! Generating a contest package.
 //!
-//! 生成する `Cargo.toml` には **規則から導けない情報だけ**をメタデータとして書く。
-//! alias とファイル名と bin 名は互いに導けるが、task screen name だけは導けないので
-//! `[package.metadata.acrust.tasks]` に必ず残す（`abc042` の C が `arc058_a` になる類）。
+//! The metadata in the generated `Cargo.toml` holds only what cannot be derived.
+//! Alias, file name and bin name all follow from one another; the task screen
+//! name does not — problem C of `abc042` is `arc058_a` — so it is written down in
+//! `[package.metadata.acrust.tasks]` and kept.
 
 use crate::config::LoadedConfig;
 use anyhow::{bail, Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// 1問ぶんの、パッケージ生成に必要な情報。
+/// What generating one problem needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProblemSpec {
     pub alias: String,
-    /// 取れていないときは `None`（コンテスト開始前にスケルトンだけ作った場合）。
+    /// `None` when it could not be read yet.
     pub screen_name: Option<String>,
 }
 
-/// `Cargo.toml` の中身を組み立てる。
 pub fn render_manifest(
     contest: &str,
     problems: &[ProblemSpec],
@@ -75,10 +75,10 @@ pub fn render_manifest(
     Ok(out)
 }
 
-/// テンプレートの依存リストから `[dependencies]` の見出し行を落とす。
+/// Drops a leading `[dependencies]` heading from the template.
 ///
-/// テンプレートは「`[dependencies]` の中身」として扱う。見出しごと書かれていると、
-/// 生成する `Cargo.toml` で節が二重になり、Cargo がテーブルの再定義として拒否する。
+/// The template is the *body* of the section. With the heading left in, the
+/// generated `Cargo.toml` carries it twice and Cargo refuses the redefinition.
 pub fn strip_dependencies_header(dependencies: &str) -> &str {
     let trimmed = dependencies.trim_start();
     match trimmed.strip_prefix("[dependencies]") {
@@ -91,7 +91,8 @@ pub fn bin_name(contest: &str, alias: &str) -> String {
     format!("{contest}-{alias}")
 }
 
-/// 設定の `[package] profile`（`[dev]` 始まりの生 TOML）を `[profile.dev]` に直す。
+/// Turns the config's `[package] profile` (raw TOML starting at `[dev]`) into a
+/// real `[profile.dev]`.
 fn render_profile(profile: &str) -> Result<String> {
     let table: toml::Table =
         toml::from_str(profile).context("[package] profile is not valid TOML")?;
@@ -99,7 +100,7 @@ fn render_profile(profile: &str) -> Result<String> {
     toml::to_string(&wrapped).context("could not build [profile]")
 }
 
-/// alias は英数字だけなので裸のキーで書けるが、念のため確認する。
+/// An alias is alphanumeric and needs no quoting, but check rather than assume.
 fn bare_key(key: &str) -> String {
     if !key.is_empty()
         && key
@@ -116,7 +117,7 @@ fn toml_string(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// 生成したファイルの記録。表示にだけ使う。
+/// What was written, for the closing report.
 #[derive(Debug, Default)]
 pub struct Written {
     pub created: Vec<String>,
@@ -130,7 +131,8 @@ impl Written {
     }
 }
 
-/// `src/bin/{alias}.rs` をテンプレートから作る。**既にあるものは絶対に上書きしない**（解答が入っている）。
+/// Writes `src/bin/{alias}.rs` from the template. An existing file is never
+/// touched — that is someone's solution.
 pub fn write_sources(
     package_dir: &Path,
     problems: &[ProblemSpec],
@@ -149,7 +151,7 @@ pub fn write_sources(
     Ok(())
 }
 
-/// テンプレートの `copy/` 以下をパッケージ直下へ複製する。既存ファイルは残す。
+/// Copies `copy/` from the template into the package, keeping existing files.
 pub fn copy_template_dir(from: &Path, package_dir: &Path, written: &mut Written) -> Result<()> {
     if !from.is_dir() {
         return Ok(());
@@ -188,7 +190,7 @@ fn copy_dir_recursive(
     Ok(())
 }
 
-/// ジャッジと同じ `Cargo.lock` を置く。無いときは警告だけして続ける。
+/// Puts the judge's `Cargo.lock` in place, warning but carrying on without one.
 pub fn copy_cargo_lock(
     config: &LoadedConfig,
     package_dir: &Path,
@@ -228,7 +230,7 @@ pub fn relative(base: &Path, path: &Path) -> String {
         .to_string()
 }
 
-/// テンプレートの `[dependencies]` を読む。無ければ何が足りないかを言う。
+/// Reads the template's `[dependencies]`, saying what is missing if it is not there.
 pub fn read_dependencies(config: &LoadedConfig) -> Result<String> {
     let path = config.template_dependencies();
     if !path.is_file() {
@@ -240,7 +242,7 @@ pub fn read_dependencies(config: &LoadedConfig) -> Result<String> {
     std::fs::read_to_string(&path).with_context(|| format!("could not read {}", path.display()))
 }
 
-/// テンプレートの `main.rs` を読む。無ければ空のテンプレートで代用する。
+/// Reads the template's `main.rs`, falling back to an empty `main()`.
 pub fn read_template_source(config: &LoadedConfig) -> Result<String> {
     let path = config.template_src();
     if !path.is_file() {
@@ -293,7 +295,8 @@ mod tests {
         let acrust = &parsed["package"]["metadata"]["acrust"];
         assert_eq!(acrust["contest"].as_str(), Some("abc042"));
         assert_eq!(acrust["tasks"]["c"].as_str(), Some("arc058_a"));
-        // 取れなかった問題は tasks に載せない（あとで fetch が埋める）。
+        // A problem whose screen name is unknown stays out of tasks; a later
+        // fetch fills it in.
         assert!(acrust["tasks"].get("d").is_none());
 
         let bins = parsed["bin"].as_array().unwrap();
@@ -301,15 +304,15 @@ mod tests {
         assert_eq!(bins[0]["name"].as_str(), Some("abc042-a"));
         assert_eq!(bins[0]["path"].as_str(), Some("src/bin/a.rs"));
 
-        // [dev] は [profile.dev] にならないと Cargo が読まない。
+        // Cargo only reads this as [profile.dev], never as [dev].
         assert_eq!(parsed["profile"]["dev"]["opt-level"].as_integer(), Some(3));
         assert_eq!(parsed["dependencies"]["proconio"].as_str(), Some("=0.5.0"));
     }
 
     #[test]
     fn a_dependencies_header_in_the_template_is_not_duplicated() {
-        // `acrust env update` が書いたテンプレートには見出しが入りうる。
-        // そのまま差し込むと [dependencies] が二重になり Cargo が拒否する。
+        // A template written by `acrust env update` can carry the heading, and
+        // pasting that in would give the manifest two [dependencies] sections.
         let manifest = render_manifest(
             "abc474",
             &problems(),
@@ -345,14 +348,14 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("acrust-pkg-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src/bin")).unwrap();
-        std::fs::write(dir.join("src/bin/a.rs"), "// 解答\n").unwrap();
+        std::fs::write(dir.join("src/bin/a.rs"), "// my solution\n").unwrap();
 
         let mut written = Written::default();
         write_sources(&dir, &problems(), "TEMPLATE\n", &mut written).unwrap();
 
         assert_eq!(
             std::fs::read_to_string(dir.join("src/bin/a.rs")).unwrap(),
-            "// 解答\n"
+            "// my solution\n"
         );
         assert_eq!(
             std::fs::read_to_string(dir.join("src/bin/c.rs")).unwrap(),

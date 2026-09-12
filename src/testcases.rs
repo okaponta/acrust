@@ -1,36 +1,38 @@
-//! テストケースファイル `{contest}/testcases/{alias}.toml`（決定 D5・設計 §4.5）。
+//! The test-case file, `{contest}/testcases/{alias}.toml`.
 //!
-//! 書き出しは serde ではなく手書きにしている。`toml` クレートの出力は
-//! 複数行データを `"8\ngreentea\n"` のような basic string にしてしまい、
-//! **問題ページとの双方向コピペ**という TOML リテラル文字列を選んだ理由が消えるため。
-//! 読み込みは serde で行い、往復テストで両者が食い違わないことを保証している。
+//! Written by hand rather than through serde. The `toml` crate renders multi-line
+//! data as a basic string — `"8\ngreentea\n"` — which throws away the entire point
+//! of literal strings here: that a case can be pasted to and from the problem page
+//! as it stands. Reading goes through serde, and a round-trip test keeps the two
+//! from drifting apart.
 
 use anyhow::{bail, Context as _, Result};
 use serde::Deserialize;
 use std::path::Path;
 
-/// TOML リテラル文字列の区切り。データ側にこれが現れたら黙って壊れたファイルを書かない。
+/// The literal-string delimiter. Data containing it is refused rather than
+/// silently written out as a broken file.
 const DELIMITER: &str = "'''";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SuiteKind {
     Batch,
-    /// サンプルテストができない問題。`acrust test` はスキップする。
+    /// Cannot be sample-tested; `acrust test` skips it.
     Interactive,
 }
 
-/// 出力の比較方法（設計 §4.5）。
+/// How output is compared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Matching {
-    /// 各行を `trim_end` して比較し、末尾の空行は無視する。
+    /// Line by line, ignoring trailing whitespace and trailing blank lines.
     Lines,
-    /// バイト完全一致。
+    /// Byte for byte.
     Exact,
-    /// 空白で分割したトークン列として比較。
+    /// As a sequence of whitespace-separated tokens.
     Words,
-    /// トークンごとに数値として比較。`[float]` の許容誤差内なら AC。
+    /// Token by token as numbers, within the tolerance in `[float]`.
     Float,
 }
 
@@ -57,10 +59,10 @@ pub struct TestCase {
 pub struct TestSuite {
     #[serde(rename = "type")]
     pub kind: SuiteKind,
-    /// `2s` / `2500ms`。取れなかった問題では `None`。
+    /// `2s` or `2500ms`. `None` when it could not be read.
     #[serde(default)]
     pub timelimit: Option<String>,
-    /// `match` は Rust の予約語なのでフィールド名だけ変えている。
+    /// Only the field is renamed; `match` is a Rust keyword.
     #[serde(rename = "match", default = "default_matching")]
     pub matching: Matching,
     #[serde(default)]
@@ -117,7 +119,6 @@ impl TestSuite {
         std::fs::write(path, text).with_context(|| format!("could not write {}", path.display()))
     }
 
-    /// 設計 §4.5 の形の TOML にする。
     pub fn to_toml(&self) -> Result<String> {
         let mut out = String::new();
         out.push_str(&format!("type = {}\n", quote(kind_name(self.kind))));
@@ -129,8 +130,8 @@ impl TestSuite {
             quote(matching_name(self.matching))
         ));
 
-        // [float] は [[cases]] より前に置く。TOML はテーブルが始まると
-        // それ以降のキーがそのテーブルに属してしまうため。
+        // [float] has to precede [[cases]]: once a table begins, every key that
+        // follows belongs to it.
         if let Some(float) = &self.float {
             out.push_str("\n[float]\n");
             if let Some(relative) = float.relative_error {
@@ -173,13 +174,13 @@ fn matching_name(matching: Matching) -> &'static str {
     }
 }
 
-/// 名前など短い文字列は basic string で十分（AtCoder の alias に特殊文字は出ない）。
+/// A basic string is enough for names; an AtCoder alias has nothing exotic in it.
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// 複数行リテラル文字列。開き `'''` の直後の改行は TOML 仕様で削られるので、
-/// データの1行目をそのまま次の行に置ける。
+/// A multi-line literal string. TOML drops the newline right after the opening
+/// `'''`, which is what lets the data start on its own line.
 fn literal_block(case: &str, field: &str, data: &str) -> Result<String> {
     if data.contains(DELIMITER) {
         bail!(
@@ -187,7 +188,7 @@ fn literal_block(case: &str, field: &str, data: &str) -> Result<String> {
              which a TOML literal string cannot hold"
         );
     }
-    // 末尾が改行でないケース（`out = '''Yes'''`）も表現できるようにする。
+    // Output with no trailing newline has to be expressible too.
     if data.is_empty() {
         return Ok(format!("{DELIMITER}{DELIMITER}"));
     }
@@ -198,10 +199,11 @@ fn literal_block(case: &str, field: &str, data: &str) -> Result<String> {
     }
 }
 
-/// `1e-9` のように、TOML と人間の両方が読める形にする。
+/// Formats as `1e-9`: readable both to TOML and to a person.
 fn format_float(value: f64) -> String {
     let formatted = format!("{value:e}");
-    // Rust の `{:e}` は `1e-9`。指数が無いときは小数点を足して float と分かるようにする。
+    // Add a decimal point when there is no exponent, so the value still reads
+    // as a float rather than an integer.
     if formatted.contains('e') {
         formatted
     } else {
@@ -209,7 +211,7 @@ fn format_float(value: f64) -> String {
     }
 }
 
-/// `2s` / `2500ms` / `2.5s` / `2000` を ms で読む。
+/// Reads `2s`, `2500ms`, `2.5s` or a bare `2000` as milliseconds.
 pub fn parse_duration(text: &str) -> Option<u64> {
     let text = text.trim();
     let (value, scale) = if let Some(rest) = text.strip_suffix("ms") {
@@ -226,7 +228,7 @@ pub fn parse_duration(text: &str) -> Option<u64> {
     Some((value * scale).round() as u64)
 }
 
-/// 整数秒なら `2s`、そうでなければ `2500ms`。
+/// `2s` for a whole number of seconds, `2500ms` otherwise.
 pub fn format_duration(millis: u64) -> String {
     if millis % 1000 == 0 {
         format!("{}s", millis / 1000)
@@ -323,7 +325,7 @@ No
         };
         let text = float.to_toml().unwrap();
         assert!(text.contains("[float]\nabsolute-error = 1e-9\n"), "{text}");
-        // [float] は [[cases]] より前になければ、cases の中に取り込まれてしまう。
+        // Placed after [[cases]], [float] would be swallowed by the last case.
         assert!(text.find("[float]").unwrap() < text.find("[[cases]]").unwrap());
         assert_eq!(TestSuite::parse(&text).unwrap(), float);
 
@@ -343,9 +345,9 @@ No
             }],
             ..suite()
         };
-        // リテラル文字列は開き引用符直後の改行しか削らないので、
-        // 末尾に改行が無いデータは round-trip すると改行が付いてしまう。
-        // 判定は Lines（末尾の空行を無視）なので実害は無いが、往復で崩れないことは確かめる。
+        // A literal string only loses the newline after its opening quotes, so
+        // data with no trailing newline gains one on the way back. `lines`
+        // ignores that, but the round trip still has to hold together.
         let parsed = TestSuite::parse(&suite.to_toml().unwrap()).unwrap();
         assert_eq!(parsed.cases[0].output.trim_end(), "Yes");
     }

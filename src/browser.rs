@@ -1,8 +1,8 @@
-//! ブラウザで URL を開く。`open` と `login` が使う。
+//! Opening a URL in a browser, for `open` and `login`.
 
 use anyhow::{bail, Context as _, Result};
 
-/// OS 標準のハンドラで `url` を開く。
+/// Hands `url` to the OS's default handler.
 pub fn open(url: &str) -> Result<()> {
     let command = if cfg!(target_os = "macos") {
         "open"

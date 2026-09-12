@@ -1,7 +1,7 @@
-//! acrust の実体。バイナリ `acrust` はこのクレートの `cli::run` を呼ぶだけ。
+//! acrust itself; the binary does nothing but call `cli::run`.
 //!
-//! ライブラリとして切り出しているのは、`tests/` からパッケージ解決などを
-//! 実際の `Cargo.toml` に対して検証できるようにするため。
+//! It is a library so that `tests/` can drive things like package resolution
+//! against real `Cargo.toml` files.
 
 pub mod atcoder;
 pub mod browser;

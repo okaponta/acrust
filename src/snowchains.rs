@@ -1,26 +1,28 @@
-//! cargo-compete / snowchains 形式の読み取り。**`acrust migrate` の中だけで使う**（決定 D4）。
+//! Reading the cargo-compete / snowchains format, used only by `acrust migrate`.
 //!
-//! 汎用の YAML パーサではなく、snowchains が書き出すこの形だけを読む。
-//! **知らない行に出会ったら必ずエラーにする**のが要点で、黙って取りこぼすことがない。
-//! 実データ 2,716 ファイル / 7,534 ケースの全行形を数えたうえで、出現する形だけを実装した。
+//! Not a general YAML parser: it reads the shapes snowchains actually writes, and
+//! errors on any line it does not recognise. That refusal is the whole design —
+//! a migration that silently drops a case it did not understand is worse than one
+//! that stops. The shapes implemented are the ones counted across 2,716 real
+//! files and 7,534 cases.
 
 use crate::testcases::{FloatTolerance, Matching, SuiteKind, TestCase, TestSuite};
 use anyhow::{anyhow, bail, Context as _, Result};
 use std::collections::BTreeMap;
 
-/// `{contest}/Cargo.toml` の `[package.metadata.cargo-compete.bin]` の1件。
+/// One entry of `[package.metadata.cargo-compete.bin]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinEntry {
-    /// `abc042-c` のような bin 名。
+    /// The bin name, e.g. `abc042-c`.
     pub name: String,
-    /// `c`。
+    /// `c`.
     pub alias: String,
-    /// `https://atcoder.jp/contests/abc042/tasks/arc058_a`。
+    /// `https://atcoder.jp/contests/abc042/tasks/arc058_a`.
     pub problem: String,
 }
 
 impl BinEntry {
-    /// 問題 URL から contest と task screen name を取り出す。
+    /// Splits the problem URL into contest and task screen name.
     pub fn contest_and_task(&self) -> Result<(String, String)> {
         let rest = self
             .problem
@@ -39,7 +41,6 @@ impl BinEntry {
     }
 }
 
-/// `[package.metadata.cargo-compete.bin]` を読む。
 pub fn parse_bins(manifest: &str) -> Result<Vec<BinEntry>> {
     let table: toml::Table = toml::from_str(manifest).context("could not read Cargo.toml")?;
     let bins = table
@@ -73,18 +74,18 @@ pub fn parse_bins(manifest: &str) -> Result<Vec<BinEntry>> {
         .collect()
 }
 
-/// `compete.toml` のうち、移行で持ち越すもの。
+/// The parts of `compete.toml` the migration carries over.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CompeteConfig {
-    /// `[template] src` に埋め込まれた解答テンプレート。
+    /// The solution template embedded in `[template] src`.
     pub template_src: Option<String>,
-    /// `[template.new] dependencies`。
+    /// `[template.new] dependencies`.
     pub dependencies: Option<String>,
-    /// `[template.new] edition`。
+    /// `[template.new] edition`.
     pub edition: Option<String>,
-    /// `[template.new.copy-files]` の値（`./template-cargo-lock.toml`）。
+    /// The value in `[template.new.copy-files]`, i.e. `./template-cargo-lock.toml`.
     pub cargo_lock: Option<String>,
-    /// `[submit] language_id`。持ち越さないが、報告のために読む。
+    /// `[submit] language_id`. Read only to report that it is not carried over.
     pub language_id: Option<String>,
 }
 
@@ -125,7 +126,6 @@ pub fn parse_compete_config(text: &str) -> Result<CompeteConfig> {
     })
 }
 
-/// snowchains のテストケース YAML を読む。
 pub fn parse_test_suite(yaml: &str) -> Result<TestSuite> {
     let mut lines = Lines::new(yaml);
     let mut kind = None;
@@ -140,7 +140,8 @@ pub fn parse_test_suite(yaml: &str) -> Result<TestSuite> {
         if trimmed.is_empty() || trimmed == "---" {
             continue;
         }
-        // `extend:` 以降は snowchains 独自の追加ケース指定で、acrust には対応物が無い。
+        // Everything from `extend:` on is snowchains' own way of naming extra
+        // cases, and acrust has nothing that corresponds to it.
         if trimmed == "extend:" {
             break;
         }
@@ -183,7 +184,7 @@ pub fn parse_test_suite(yaml: &str) -> Result<TestSuite> {
     })
 }
 
-/// `2s` / `2s 500ms` / `500ms` / `~`。
+/// `2s`, `2s 500ms`, `500ms`, or `~` for none.
 fn parse_timelimit(value: &str) -> Result<Option<String>> {
     if value == "~" {
         return Ok(None);
@@ -298,7 +299,7 @@ fn american_colon() -> char {
     ':'
 }
 
-/// `|` / `>` のブロックスカラーと、二重引用符の文字列を読む。
+/// Reads a `|` or `>` block scalar, or a double-quoted string.
 fn read_scalar(lines: &mut Lines, marker: &str, key_indent: usize) -> Result<String> {
     match marker {
         "|" => Ok(read_block(lines, key_indent, false)),
@@ -310,14 +311,16 @@ fn read_scalar(lines: &mut Lines, marker: &str, key_indent: usize) -> Result<Str
     }
 }
 
-/// ブロックスカラーの本文。`clip`（既定）なので末尾の改行は1つに畳む。
+/// The body of a block scalar. YAML's default chomping is `clip`, so the trailing
+/// newlines collapse to one.
 fn read_block(lines: &mut Lines, key_indent: usize, folded: bool) -> String {
     let indent = key_indent + 2;
     let mut collected: Vec<String> = Vec::new();
     while let Some(line) = lines.peek() {
         let text = line.text;
         if text.trim().is_empty() {
-            // 本文の途中の空行か、ブロックの終わりかは次の行で決まる。
+            // Whether a blank line is part of the body or the end of it is
+            // decided by the line after it.
             let blank = text.to_owned();
             lines.next();
             if lines
@@ -340,7 +343,7 @@ fn read_block(lines: &mut Lines, key_indent: usize, folded: bool) -> String {
         return String::new();
     }
     if folded {
-        // 折り畳みスタイル: 連続する行は空白で繋ぎ、空行は改行になる。
+        // Folded: consecutive lines join with a space, a blank line is a newline.
         let mut out = String::new();
         for (i, line) in collected.iter().enumerate() {
             if i > 0 {
@@ -357,7 +360,7 @@ fn read_block(lines: &mut Lines, key_indent: usize, folded: bool) -> String {
     format!("{}\n", collected.join("\n").trim_end_matches('\n'))
 }
 
-/// 二重引用符つき文字列のエスケープを戻す。出現するのは `\n` と `\"` と `\\` だけ。
+/// Undoes the escapes in a double-quoted string. Only `\n`, `\"` and `\\` occur.
 fn unescape(text: &str) -> Result<String> {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars();
@@ -379,7 +382,7 @@ fn unescape(text: &str) -> Result<String> {
     Ok(out)
 }
 
-/// 行番号つきの1行読み。
+/// A line, and the number to name it by in an error.
 struct Line<'a> {
     number: usize,
     text: &'a str,
@@ -413,7 +416,8 @@ impl<'a> Lines<'a> {
     }
 }
 
-/// 移行後のメタデータから問題 URL を組み立て直す。往復検証に使う。
+/// Rebuilds a problem URL from the metadata the migration is about to write,
+/// which is how the conversion proves it lost nothing.
 pub fn rebuild_problem_url(
     contest: &str,
     tasks: &BTreeMap<String, String>,
@@ -490,7 +494,7 @@ mod tests {
         let yaml = "---\ntype: Batch\ntimelimit: 2s\nmatch: Lines\n\ncases:\n  - name: sample1\n    in: \"5 0\\n\\n\"\n    out: >\n\nextend:\n";
         let suite = parse_test_suite(yaml).unwrap();
         assert_eq!(suite.cases[0].input, "5 0\n\n");
-        assert_eq!(suite.cases[0].output, "", "空の折り畳みブロックは空文字列");
+        assert_eq!(suite.cases[0].output, "", "an empty folded block is empty");
     }
 
     #[test]
