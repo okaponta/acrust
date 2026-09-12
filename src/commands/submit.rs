@@ -1,11 +1,13 @@
-//! `acrust submit`（設計 §3.4 / §4.9 / 決定 D7 / D9 / D13）。
+//! `acrust submit`.
 //!
-//! 提出するのは常に `src/bin/{alias}.rs` そのもの。差し替え口は設けない（D13）ので、
-//! 「提出したもの = リポジトリの中身」が常に成り立つ。
+//! What is sent is always `src/bin/{alias}.rs` as it stands. There is no hook for
+//! rewriting it on the way out, which is what makes "what you submitted is what
+//! the repository holds" true without qualification.
 //!
-//! 提出後の結果追跡は既定 ON（D9）。`/contests/*/submissions/` は robots.txt で
-//! Disallow されているうえ、追いたい瞬間はコンテスト直後＝AtCoder が最も混む時間帯なので、
-//! §4.9 の作法（指数バックオフ・確定即停止・1 分打ち切り・`Retry-After` 遵守）を必ず守る。
+//! The result is followed by default. `/contests/*/submissions/` is Disallowed by
+//! robots.txt, and the moment you want to watch is right after a contest, when
+//! AtCoder is busiest — so watching backs off exponentially, stops the instant
+//! the verdict settles, gives up after a minute, and honours `Retry-After`.
 
 use crate::atcoder::submit::{self as parse, Language, Submission};
 use crate::atcoder::{auth, AtCoderClient};
@@ -19,11 +21,11 @@ use std::io::Write as _;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-/// 追跡の間隔をこの倍率で伸ばす（設計 §4.9）。
+/// Each poll waits this much longer than the last.
 const BACKOFF_FACTOR: f64 = 1.5;
-/// 間隔の上限。
+/// Ceiling on the interval.
 const MAX_INTERVAL: Duration = Duration::from_secs(10);
-/// 連続でこれだけ失敗したら追跡をやめる。
+/// Give up after this many failures in a row.
 const MAX_CONSECUTIVE_FAILURES: u32 = 3;
 
 pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitCode> {
@@ -39,8 +41,8 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
     )?;
     ui::arrow(&resolved.describe(&package));
 
-    // 誤推定のコストが非対称なので、推定したときだけ確認する（決定 D7）。
-    // 明示指定なら確認しない。
+    // Confirm only what was guessed. The costs are lopsided: a wrong guess is a
+    // penalty that cannot be taken back, a wrong confirmation is one keystroke.
     if resolved.origin == Origin::Inferred && !confirm(&resolved, &package)? {
         ui::info("did not submit");
         return Ok(ExitCode::FAILURE);
@@ -101,10 +103,11 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
     let response = client.post_form(&submit_url, &form, &submit_url)?;
 
     let location = match &response.location {
-        // AtCoder 自身が /submissions/me へ飛ばす。ここに来れば受理されている。
+        // AtCoder sends an accepted submission to /submissions/me itself.
         Some(location) if location.contains("/submissions/me") => location.clone(),
         Some(location) => {
-            // 言語 ID が古いと弾かれる。キャッシュを捨てて次回に備える。
+            // A stale language id is one way to land here; drop the cached one
+            // so the next attempt reads it off the page again.
             let _ = cache::forget_language(&pattern);
             bail!("the submission was not accepted (redirected to {location})");
         }
@@ -134,11 +137,11 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
     Ok(watch(&client, &config, &package.contest, &submission, &url))
 }
 
-/// POST するフォームを組む。
+/// Builds the form to POST: every hidden field the page carries, then the problem,
+/// the language and the source on top.
 ///
-/// 隠しフィールドはページに書かれている通りに写し、そのうえで問題・言語・ソースを載せる。
-/// `csrf_token` だけを送る形にしないのは、AtCoder が隠しフィールドを増やしたときに
-/// 「エラーが発生しました。」とだけ言われて原因が分からなくなるため。
+/// Sending `csrf_token` alone would work until the day AtCoder adds a field, and
+/// the only thing said about it would be "エラーが発生しました。".
 fn submit_form(
     page: &str,
     contest: &str,
@@ -164,17 +167,18 @@ fn submit_form(
     form
 }
 
-/// 受理されなかったときに、次の一手が分かるだけの情報を出す。
+/// Says enough about a rejection for the user to know what to do next.
 ///
-/// AtCoder は理由を「エラーが発生しました。」としか言わないので、
-/// こちら側で分かること（CAPTCHA の有無・HTTP ステータス・セッションの生死）を添える。
+/// AtCoder gives no reason beyond "エラーが発生しました。", so this adds what can
+/// be worked out from here: whether the page had a CAPTCHA, the HTTP status, and
+/// whether the reply still considers us logged in.
 fn report_rejection(response: &crate::atcoder::client::AtCoderResponse, page_had_captcha: bool) {
     if page_had_captcha {
-        // AtCoder は 2025-03 に Cloudflare Turnstile を入れ、**コンテスト終了後**の
-        // 提出フォームにもこれを出すようになった（2026-09-12 に実地確認）。
-        // 隠しフィールド `cf-turnstile-response` はブラウザ上の JS が差し込むので、
-        // 素の POST では csrf_token が正しくても弾かれる（`/login` と同じ塞がれ方）。
-        // 開催中の提出はこれまでどおり通る。
+        // Since March 2025 the submit form of a *finished* contest carries
+        // Cloudflare Turnstile too (confirmed on 2026-09-12). The hidden
+        // `cf-turnstile-response` field comes from the browser's JS, so a plain
+        // POST is refused however correct its csrf_token — the same wall as
+        // `/login`. Submitting during a contest still goes through.
         ui::warn("the contest is over, so submit cannot run. Use copy and submit it by hand");
         return;
     }
@@ -190,7 +194,7 @@ fn report_rejection(response: &crate::atcoder::client::AtCoderResponse, page_had
     }
 }
 
-/// 提出前にサンプルテストを通す。通らなければここで止める。
+/// Runs the sample tests first, and stops here if they do not pass.
 fn test_first(
     config: &LoadedConfig,
     package: &Package,
@@ -218,7 +222,7 @@ fn test_first(
     Ok(Some(ExitCode::FAILURE))
 }
 
-/// 言語 ID はハードコードせず、提出ページの `<select>` から選ぶ（設計 §3.4）。
+/// Reads the language id off the submit page rather than hardcoding one.
 fn choose_language(
     config: &LoadedConfig,
     page: &str,
@@ -241,7 +245,6 @@ fn choose_language(
     Ok(language)
 }
 
-/// 提出結果を追う（設計 §4.9）。
 fn watch(
     client: &AtCoderClient,
     config: &LoadedConfig,
@@ -253,7 +256,7 @@ fn watch(
         return verdict_exit_code(&submission.verdict);
     }
 
-    // AtCoder のページ自身がポーリングしている API。実測でページ全体の 1/40 の大きさ。
+    // The API the AtCoder page itself polls: a fortieth of the page's size.
     let status_url = format!(
         "https://atcoder.jp/contests/{contest}/submissions/me/status/json?reload=true&sids[]={}",
         submission.id
@@ -308,7 +311,7 @@ fn watch(
         interval = next_interval(interval);
     }
 
-    // ジャッジが混んで長引くときは、ブラウザで見た方が早い。
+    // When the judge is backed up, the browser is the faster place to watch.
     ui::info(&format!(
         "no verdict after {} seconds, so no longer following it: {url}",
         config.config.submit.watch_timeout_s
@@ -316,12 +319,12 @@ fn watch(
     ExitCode::SUCCESS
 }
 
-/// 次のポーリング間隔。1.5 倍ずつ、上限 10 秒（設計 §4.9）。
+/// The next polling interval: 1.5x each time, never past 10 seconds.
 fn next_interval(current: Duration) -> Duration {
     current.mul_f64(BACKOFF_FACTOR).min(MAX_INTERVAL)
 }
 
-/// AC 以外は失敗として返す。シェルの `&&` で繋げられるように。
+/// Anything but AC exits non-zero, so `submit && ...` works.
 fn verdict_exit_code(verdict: &str) -> ExitCode {
     if verdict.trim() == "AC" {
         ExitCode::SUCCESS
@@ -330,7 +333,7 @@ fn verdict_exit_code(verdict: &str) -> ExitCode {
     }
 }
 
-/// 推定した問題を提出してよいか尋ねる。既定は「いいえ」。
+/// Asks before submitting a guessed problem. The default answer is no.
 fn confirm(resolved: &Resolved, package: &Package) -> Result<bool> {
     use std::io::IsTerminal as _;
 
@@ -354,7 +357,7 @@ fn confirm(resolved: &Resolved, package: &Package) -> Result<bool> {
 mod tests {
     use super::*;
 
-    /// 設計 §4.9 が定めた間隔（2s → 3s → 4.5s → 6.75s → 10s → 10s …）。
+    /// 2s -> 3s -> 4.5s -> 6.75s -> 10s -> 10s ...
     #[test]
     fn the_backoff_follows_the_documented_schedule() {
         let mut interval = Duration::from_millis(2000);
@@ -376,7 +379,7 @@ mod tests {
         );
     }
 
-    /// 1 分の窓に入るリクエストは 8 回まで。混む時間帯に叩き続けないための上限。
+    /// At most 8 requests a minute, so watching cannot hammer a busy judge.
     #[test]
     fn one_minute_of_watching_is_at_most_eight_requests() {
         let deadline = Duration::from_secs(60);
@@ -388,10 +391,10 @@ mod tests {
             requests += 1;
             interval = next_interval(interval);
         }
-        assert_eq!(requests, 8, "1 分で {requests} 回");
+        assert_eq!(requests, 8, "{requests} requests in a minute");
     }
 
-    /// 提出するのは「ページのフォーム + 問題・言語・ソース」。
+    /// What goes out is the page's own form plus problem, language and source.
     #[test]
     fn the_form_keeps_every_hidden_field_the_page_carries() {
         let page = r#"
@@ -419,7 +422,7 @@ mod tests {
         );
     }
 
-    /// フォームが読めなくても、`var csrfToken` から取った値で組み立てられること。
+    /// An unreadable form still submits, on the token from `var csrfToken`.
     #[test]
     fn a_page_without_a_form_falls_back_to_the_scripts_token() {
         let form = submit_form(

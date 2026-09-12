@@ -1,6 +1,6 @@
-//! `acrust run` — 標準入力を素通しして解答を実行する。
+//! `acrust run` — run a solution with stdin passed straight through.
 //!
-//! テストではなく、手で入力を打ち込んで様子を見るためのもの。
+//! Not for testing; for typing input in by hand and watching what happens.
 
 use crate::config::LoadedConfig;
 use crate::runner;
@@ -31,7 +31,8 @@ pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
     };
     let executable = runner::build(&package.manifest_path, &resolved.bin.name, profile)?;
 
-    // 標準入出力はそのまま繋ぐ。対話的に使えることが目的なので、こちらは何も挟まない。
+    // Inherit all three streams. Being usable interactively is the whole point,
+    // so nothing sits in between.
     let status = Command::new(&executable)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())

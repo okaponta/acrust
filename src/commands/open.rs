@@ -1,4 +1,4 @@
-//! `acrust open` — ブラウザで問題を開く。
+//! `acrust open` — open a problem in the browser.
 
 use crate::browser;
 use crate::ui;
@@ -14,7 +14,7 @@ pub fn run(problem: Option<String>) -> Result<()> {
                 .with_context(|| format!("{} has no problem {query}", package.name))?;
             vec![bin.alias.clone()]
         }
-        // 引数なしなら全問。
+        // No argument means every problem of the contest.
         None => package.bins.iter().map(|bin| bin.alias.clone()).collect(),
     };
 

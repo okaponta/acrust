@@ -1,4 +1,4 @@
-//! `acrust login` / `logout` / `status`。
+//! `acrust login` / `logout` / `status`.
 
 use crate::atcoder::{auth, AtCoderClient};
 use crate::browser;
@@ -10,10 +10,10 @@ use anyhow::{Context as _, Result};
 use std::io::IsTerminal as _;
 use std::sync::OnceLock;
 
-/// ブラウザで取得したセッションクッキーを取り込んで保存する。
+/// Takes in a session cookie from the browser and saves it.
 ///
-/// AtCoder の `/login` は Cloudflare Turnstile で守られており、ID / パスワードの
-/// POST はプログラムからは通らない（`atcoder::auth` のモジュールコメント参照）。
+/// `/login` is behind Cloudflare Turnstile, so an id / password POST cannot work
+/// from a program at all; see the module comment on `atcoder::auth`.
 pub fn login(cookie: Option<String>, no_open: bool) -> Result<()> {
     let atcoder = atcoder_config();
     let client = AtCoderClient::new(&atcoder)?;
@@ -24,14 +24,15 @@ pub fn login(cookie: Option<String>, no_open: bool) -> Result<()> {
             ui::info("run `acrust logout` first to sign in as someone else");
             return Ok(());
         }
-        // 期限切れのセッションが残っていた。捨ててから入り直す。
+        // An expired session was lying around. Drop it and start over.
         client.clear_cookies();
     }
 
     let pasted = match cookie {
         Some(cookie) => cookie,
         None => {
-            // 貼る元のページを開いておく。DevTools を出すところは手でやってもらう。
+            // Open the page the cookie is copied from; reaching DevTools is
+            // something the user has to do by hand.
             if !no_open && std::io::stdin().is_terminal() {
                 ui::arrow(&format!("opening {} in your browser", auth::LOGIN_URL));
                 if let Err(e) = browser::open(auth::LOGIN_URL) {
@@ -53,7 +54,7 @@ pub fn login(cookie: Option<String>, no_open: bool) -> Result<()> {
     Ok(())
 }
 
-/// 端末なら伏せ字で、パイプ越しなら普通に 1 行読む。
+/// Reads a line, hidden on a terminal and plainly through a pipe.
 fn read_secret(label: &str) -> Result<String> {
     if std::io::stdin().is_terminal() {
         return rpassword::prompt_password(label).context("could not read your input");
@@ -71,7 +72,6 @@ fn print_instructions() {
     ui::info("");
 }
 
-/// 保存済みのセッションを破棄する。
 pub fn logout() -> Result<()> {
     match session::discard()? {
         Some(path) => {
@@ -82,22 +82,23 @@ pub fn logout() -> Result<()> {
     Ok(())
 }
 
-/// `status` の1行。ラベル幅を揃えるため、全部そろえてから描く。
+/// One row of `status`. Collected before printing so the labels can be aligned.
 struct Line {
     mark: Mark,
     label: &'static str,
     value: String,
 }
 
-/// 直すために打つコマンドと、その理由。
+/// A command to type, and what it would fix.
 struct Todo {
     command: &'static str,
     reason: &'static str,
 }
 
-/// ログイン状態・設定の場所・ジャッジ環境のバージョンを表示する。
+/// Login state, where the config lives, which judge environment is in use.
 ///
-/// 並んだ値を読んで判断させないため、最後に「問題ないか」を1行で言い切る。
+/// The last line says outright whether anything needs doing, so that nobody has
+/// to work it out by reading the rows above.
 pub fn status(offline: bool) -> Result<()> {
     let mut lines: Vec<Line> = Vec::new();
     let mut todos: Vec<Todo> = Vec::new();
@@ -105,7 +106,8 @@ pub fn status(offline: bool) -> Result<()> {
     let loaded = LoadedConfig::find();
     match &loaded {
         Ok(loaded) => {
-            // 設定ファイルを探す手間を無くすため、絶対パスを必ず出す（決定 D2）。
+            // Always the absolute path: this is the line people come here for
+            // when they want to open the config.
             lines.push(Line {
                 mark: Mark::Ok,
                 label: "config",
@@ -204,7 +206,8 @@ fn login_line(
         } else {
             &saved.user_screen_name
         };
-        // --offline は本人が望んだ状態なので、対応の要る「!」ではなく事実の「·」。
+        // --offline is what the user asked for, so this is a statement of fact
+        // (`·`), not something needing attention (`!`).
         return Ok(Line {
             mark: Mark::Info,
             label: "login",
@@ -231,7 +234,7 @@ fn login_line(
     }
 }
 
-/// パッケージの中で実行されたときは、いま何が対象になるかも見せる。
+/// Inside a package, also show which problem a bare command would act on.
 fn package_lines(loaded: &LoadedConfig) -> Vec<Line> {
     let Ok(package) = Package::find() else {
         return Vec::new();
@@ -267,7 +270,7 @@ fn package_lines(loaded: &LoadedConfig) -> Vec<Line> {
                     value: format!("{} ({}{suffix})", resolved.bin.alias, src.display()),
                 }
             }
-            // まだ解答を書いていないだけなので、これも事実の報告にとどめる。
+            // Nothing is wrong; the solutions just have not been written yet.
             Err(e) => Line {
                 mark: Mark::Info,
                 label: "problem",
@@ -278,12 +281,13 @@ fn package_lines(loaded: &LoadedConfig) -> Vec<Line> {
     lines
 }
 
-/// 最初の1文だけを返す。
+/// The first sentence only.
 ///
-/// 問題が決まらない理由の説明には「指定しろ・候補はこれ」が続くが、それは
-/// `acrust test` が言うことで、1 行に収めたい `status` では長いだけ。
+/// The reason a problem could not be resolved is followed by "name one, here are
+/// the candidates" — which is `acrust test`'s job to say, and too long for a row
+/// of `status`.
 ///
-/// 区切りは「ピリオド + 空白」で見る。`1.89.0` のような数字で切らないため。
+/// The split is on ". ", not on ".", or `1.89.0` would be cut in half.
 fn first_sentence(message: &str) -> String {
     match message.split_once(". ") {
         Some((head, _)) => head.to_owned(),
@@ -291,7 +295,7 @@ fn first_sentence(message: &str) -> String {
     }
 }
 
-/// 言語アップデートの版（例 `2025-10`）と、テンプレートの状態。
+/// The language update in use (`2025-10`), and the state of the template.
 fn judge_env_line(loaded: &LoadedConfig, todos: &mut Vec<Todo>) -> Line {
     let version = language_update_version(&loaded.config.atcoder.language_list)
         .unwrap_or_else(|| "(unknown)".to_owned());
@@ -303,7 +307,8 @@ fn judge_env_line(loaded: &LoadedConfig, todos: &mut Vec<Todo>) -> Line {
 
     let (mark, reason) = match (crates, has_lock) {
         (Some(_), true) => (Mark::Ok, None),
-        // Cargo.lock が無くてもビルドはできるが、ジャッジと同じ版で固まらない。
+        // A build works without Cargo.lock; it just no longer resolves to the
+        // same versions the judge builds with.
         (Some(_), false) => (Mark::Todo, Some("fetch the same Cargo.lock the judge uses")),
         (None, _) => (
             Mark::Bad,
@@ -348,7 +353,8 @@ fn rustc_line(loaded: &LoadedConfig) -> Line {
                 .map(str::to_owned)
         });
     let local = local_rustc_version().unwrap_or_else(|| "(unknown)".to_owned());
-    // 固定した版と実際に動く版が食い違うと、手元では通って提出で初めて CE になる。
+    // When the pinned and running versions differ, the code compiles here and
+    // first fails as CE on the judge.
     let (mark, value) = match pinned {
         Some(pinned) if pinned == local => {
             (Mark::Ok, format!("{pinned} (matches rust-toolchain.toml)"))
@@ -366,7 +372,7 @@ fn rustc_line(loaded: &LoadedConfig) -> Line {
     }
 }
 
-/// `https://.../language-update/2025-10/...` から `2025-10` を取り出す。
+/// Pulls `2025-10` out of `https://.../language-update/2025-10/...`.
 fn language_update_version(url: &str) -> Option<String> {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
@@ -384,7 +390,8 @@ fn local_rustc_version() -> Option<String> {
     text.split_whitespace().nth(1).map(str::to_owned)
 }
 
-/// `status` や `login` は設定が無くても動かしたいので、無ければ既定値を使う。
+/// `status` and `login` have to work outside an acrust repository, so a missing
+/// config falls back to the defaults rather than failing.
 fn atcoder_config() -> AtcoderConfig {
     LoadedConfig::find()
         .map(|loaded| loaded.config.atcoder)
@@ -407,7 +414,7 @@ mod tests {
         assert_eq!(language_update_version("https://example.com/"), None);
     }
 
-    /// 「次にやること（N 件）」に並ぶ対応は、原因のある行だけから積まれる。
+    /// Only a row with something wrong with it adds to "next steps (N)".
     #[test]
     fn a_missing_session_is_the_only_todo_when_everything_else_is_fine() {
         let mut todos = Vec::new();
@@ -427,11 +434,11 @@ mod tests {
             ),
             "cannot tell which problem you mean (everything is still the template)"
         );
-        // 区切りが無ければそのまま（末尾のピリオドだけ落とす）。
+        // With no sentence break, only the trailing period goes.
         assert_eq!(first_sentence("no bin targets."), "no bin targets");
     }
 
-    /// `--offline` では AtCoder を叩かないので、確認できていないことを明示する。
+    /// `--offline` never asks AtCoder, and says so rather than implying it did.
     #[test]
     fn offline_reports_the_saved_name_without_asking_atcoder() {
         let saved = Session::new("cookie".to_owned(), "okaponta".to_owned());
@@ -439,6 +446,6 @@ mod tests {
         let line = login_line(Some(&saved), true, &mut todos).unwrap();
         assert_eq!(line.mark, Mark::Info);
         assert!(line.value.starts_with("okaponta"), "{}", line.value);
-        assert!(todos.is_empty(), "確認していないだけで、壊れてはいない");
+        assert!(todos.is_empty(), "unverified is not the same as broken");
     }
 }

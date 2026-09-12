@@ -1,11 +1,12 @@
-//! `acrust migrate`（設計 §4.8・決定 D4）。
+//! `acrust migrate` — a one-time conversion from cargo-compete's layout.
 //!
-//! cargo-compete 形式から acrust 形式への**一度きり**の変換。
-//! cargo-compete 形式を読むのはこのサブコマンドの中だけで、`test` や `submit` は
-//! acrust 形式しか見ない。互換シムがコード全体に散らばらず、将来 migrate ごと消せる。
+//! This subcommand is the only place that reads cargo-compete's format; `test`
+//! and `submit` know nothing about it. That keeps compatibility shims from
+//! spreading through the codebase, and means migrate can one day be deleted whole.
 //!
-//! 変換は情報の名前替えにすぎず、失われる情報が無い。それを毎回確かめるために
-//! **往復検証**を行い、1 件でも合わなければ何も書かずに中断する。
+//! The conversion only renames information — nothing is lost — and every run
+//! proves it by round-tripping the result. A single mismatch stops the migration
+//! with nothing written.
 
 use crate::commands::init;
 use crate::package;
@@ -44,7 +45,7 @@ pub fn run(write: bool, allow_dirty: bool) -> Result<()> {
     Ok(())
 }
 
-/// 移行の規模。表示とテストに使う。
+/// How much there was to migrate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Summary {
     pub packages: usize,
@@ -53,9 +54,11 @@ pub struct Summary {
     pub cases: usize,
 }
 
-/// `root` の cargo-compete リポジトリを移行する。git の状態は見ない（呼び出し側の責任）。
+/// Migrates the cargo-compete repository at `root`. Checking that git is clean
+/// is the caller's job.
 ///
-/// 往復検証は `write` が false でも必ず行う。1 件でも合わなければ何も書かずにエラーを返す。
+/// The round-trip check runs even for a dry run, so `--write` cannot be the
+/// moment a conversion problem is discovered.
 pub fn migrate_at(root: &Path, write: bool) -> Result<Summary> {
     let compete = std::fs::read_to_string(root.join(COMPETE_FILE))
         .with_context(|| format!("could not read {}", root.join(COMPETE_FILE).display()))?;
@@ -76,7 +79,7 @@ pub fn migrate_at(root: &Path, write: bool) -> Result<Summary> {
     Ok(summary)
 }
 
-/// `compete.toml` を持つディレクトリ。
+/// The directory holding `compete.toml`.
 fn find_root() -> Result<PathBuf> {
     let cwd = std::env::current_dir().context("could not get the current directory")?;
     cwd.ancestors()
@@ -91,7 +94,8 @@ fn find_root() -> Result<PathBuf> {
         })
 }
 
-/// 取り消せる状態であることを確かめる。移行は多数のファイルを書き換えるため。
+/// Refuses to start unless the migration can be undone: it rewrites a lot of
+/// files at once, and `git checkout .` is the way back.
 fn ensure_clean(root: &Path) -> Result<()> {
     let output = std::process::Command::new("git")
         .arg("-C")
@@ -111,13 +115,13 @@ fn ensure_clean(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 1 パッケージぶんの変換内容。
+/// What would be converted in one package.
 struct PackagePlan {
     dir: PathBuf,
     contest: String,
-    /// alias -> task screen name。
+    /// alias -> task screen name.
     tasks: BTreeMap<String, String>,
-    /// (yml のパス, toml のパス, 変換結果)。
+    /// The yml read, the toml to write, and the converted suite.
     suites: Vec<(PathBuf, PathBuf, TestSuite)>,
     bins: Vec<BinEntry>,
 }
@@ -160,7 +164,8 @@ impl Plan {
             }
             let contest = contest.expect("bins is non-empty");
 
-            // ここで往復検証その1: メタデータから組み直した URL が元と一致すること。
+            // First round-trip check: a problem URL rebuilt from the metadata we
+            // are about to write has to come out identical to the original.
             for bin in &bins {
                 let rebuilt = snowchains::rebuild_problem_url(&contest, &tasks, &bin.alias)
                     .ok_or_else(|| {
@@ -204,8 +209,8 @@ impl Plan {
         }
     }
 
-    /// 書き換えの内容は `--write` のときだけ出す。
-    /// 下見では 1 バイトも触らないので、何を作る・消すと並べても読む意味がない。
+    /// The list of what gets written is only shown for `--write`. A dry run
+    /// touches nothing, so naming the files it would create is just noise.
     fn report(&self, compete: &CompeteConfig, write: bool) {
         let bins: usize = self.packages.iter().map(|p| p.bins.len()).sum();
         let files: usize = self.packages.iter().map(|p| p.suites.len()).sum();
@@ -271,7 +276,7 @@ impl Plan {
     }
 }
 
-/// `{contest}/testcases/*.yml` を acrust の形に変換する（まだ書かない）。
+/// Converts `{contest}/testcases/*.yml`, without writing anything yet.
 fn convert_testcases(package_dir: &Path) -> Result<Vec<(PathBuf, PathBuf, TestSuite)>> {
     let dir = package_dir.join("testcases");
     if !dir.is_dir() {
@@ -299,7 +304,8 @@ fn convert_testcases(package_dir: &Path) -> Result<Vec<(PathBuf, PathBuf, TestSu
         .collect()
 }
 
-/// 往復検証その2: 書き出した TOML を読み直して、入出力がバイト単位で一致すること。
+/// Second round-trip check: the TOML is read back, and every case has to match
+/// the original byte for byte.
 fn verify_round_trip(suite: &TestSuite, source: &Path) -> Result<()> {
     let text = suite
         .to_toml()
@@ -315,9 +321,8 @@ fn verify_round_trip(suite: &TestSuite, source: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `[package.metadata.cargo-compete]` を `[package.metadata.acrust]` に置き換える。
-///
-/// 他の項目（手で足した依存やコメント）はそのまま残す。
+/// Replaces `[package.metadata.cargo-compete]` with `[package.metadata.acrust]`,
+/// leaving hand-added dependencies and comments where they are.
 fn rewrite_manifest(package: &PackagePlan) -> Result<()> {
     let path = package.dir.join("Cargo.toml");
     let text = std::fs::read_to_string(&path)
@@ -351,7 +356,7 @@ fn rewrite_manifest(package: &PackagePlan) -> Result<()> {
         .with_context(|| format!("could not write {}", path.display()))
 }
 
-/// `.acrust/` 以下を作る。テンプレートは compete.toml から持ち越す。
+/// Creates `.acrust/`, carrying the templates over from compete.toml.
 fn write_settings(root: &Path, compete: &CompeteConfig) -> Result<()> {
     let mut config: toml_edit::DocumentMut = init::DEFAULT_CONFIG
         .parse()
@@ -397,7 +402,7 @@ fn write_settings(root: &Path, compete: &CompeteConfig) -> Result<()> {
     Ok(())
 }
 
-/// `[package.metadata.cargo-compete.bin]` を持つ `Cargo.toml` を集める。
+/// Every `Cargo.toml` carrying `[package.metadata.cargo-compete.bin]`.
 fn collect_packages(root: &Path) -> Result<Vec<PathBuf>> {
     let mut manifests = Vec::new();
     for entry in std::fs::read_dir(root)

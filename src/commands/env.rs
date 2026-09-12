@@ -1,7 +1,8 @@
-//! `acrust env update`（設計 §3.5）。
+//! `acrust env update`.
 //!
-//! AtCoder の言語アップデート情報から、依存クレート・`Cargo.lock`・`edition`・
-//! rustc のバージョンを丸ごと取り直す。書き換える前に必ず差分を見せる（決定 D6）。
+//! Re-reads the crates, `Cargo.lock`, edition and rustc version from AtCoder's
+//! language update. The diff is always shown before anything is written: these
+//! are files the user may well have edited by hand.
 
 use crate::atcoder::env::{self, JudgeEnvironment};
 use crate::atcoder::AtCoderClient;
@@ -69,12 +70,12 @@ pub fn update(language_list: Option<String>, yes: bool) -> Result<()> {
     Ok(())
 }
 
-/// 何を書き換えることになるか。
+/// What the update would write.
 struct Plan {
     dependencies: env::DependencyDiff,
     edition: Option<(String, String)>,
     toolchain: Option<(String, String)>,
-    /// `Cargo.lock` を書き換えるときの行数（いま / これから）。いま無ければ `None`。
+    /// Line counts, now and after. `None` when there is nothing to write.
     lock: Option<(Option<usize>, usize)>,
     language_list: Option<String>,
 }
@@ -110,7 +111,8 @@ impl Plan {
             )
         });
 
-        // 1682 行の差分をそのまま見せても読めないので、何行から何行になるかだけ出す。
+        // A 1682-line diff is not something anyone reads, so only the line counts
+        // are reported.
         let current_lock = std::fs::read_to_string(config.template_cargo_lock()).ok();
         let lock = lock
             .filter(|lock| current_lock.as_deref() != Some(lock))
@@ -217,7 +219,7 @@ impl Plan {
     }
 }
 
-/// 出どころが分かるヘッダを付けて `[dependencies]` を書く。
+/// Writes `[dependencies]` under a header saying where it came from.
 fn render_dependencies(environment: &JudgeEnvironment, config: &LoadedConfig) -> String {
     format!(
         "# [dependencies] matching AtCoder's judge environment exactly.\n\
@@ -229,12 +231,13 @@ fn render_dependencies(environment: &JudgeEnvironment, config: &LoadedConfig) ->
          # Source:      {}\n\n{}",
         environment.display,
         config.config.atcoder.language_list,
-        // テンプレートは [dependencies] の「中身」。見出しは Cargo.toml を組み立てる側が書く。
+        // The template holds the *body* of [dependencies]; whoever assembles the
+        // Cargo.toml writes the heading.
         crate::package::strip_dependencies_header(&environment.dependencies)
     )
 }
 
-/// 設定は `toml_edit` で書き換える。コメントも書式も保つ（決定 D3）。
+/// Edited with `toml_edit` so the user's comments and formatting survive.
 fn update_config(config: &LoadedConfig, edition: &str, language_list: Option<&str>) -> Result<()> {
     let text = std::fs::read_to_string(&config.path)
         .with_context(|| format!("could not read {}", config.path.display()))?;
@@ -250,7 +253,7 @@ fn update_config(config: &LoadedConfig, edition: &str, language_list: Option<&st
         .with_context(|| format!("could not write {}", config.path.display()))
 }
 
-/// 末尾に改行がある / ない両方で同じ数になるように数える。
+/// Counts the same with or without a trailing newline.
 fn count_lines(text: &str) -> usize {
     text.lines().count()
 }

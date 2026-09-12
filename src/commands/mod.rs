@@ -1,6 +1,5 @@
-/// `init` と `migrate` が「次にやること」で出す案内。
-///
-/// 同じコマンドの説明を 2 か所で別の言い方にしていたので、1 つにまとめた。
+/// The "next step" line `init` and `migrate` both print. Shared because the two
+/// had drifted into describing the same command in two different ways.
 pub const NEXT_ENV_UPDATE: &str =
     "  acrust env update   # match the judge environment (crates, Cargo.lock, rustc)";
 

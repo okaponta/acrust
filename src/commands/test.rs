@@ -1,7 +1,7 @@
-//! `acrust test`（設計 §4.7）。
+//! `acrust test`.
 //!
-//! ビルドは1回、実行は並列。全 AC なら終了コード 0、そうでなければ 1 を返すので
-//! シェルの `&&` や CI にそのまま繋げられる。
+//! One build, then the cases run in parallel. All AC exits 0 and anything else
+//! exits 1, so it drops straight into a shell `&&` or a CI step.
 
 use crate::config::LoadedConfig;
 use crate::judge::Verdict;
@@ -13,14 +13,14 @@ use anyhow::{bail, Result};
 use std::process::ExitCode;
 use std::time::Duration;
 
-/// 制限時間が取れなかった問題で使う値。
+/// Used when the problem's time limit could not be read.
 const FALLBACK_TIMELIMIT: Duration = Duration::from_secs(10);
 
-/// 打ち切りまでの最低待ち時間。
+/// Floor on how long a case is given before it is killed.
 ///
-/// 手元のマシンはジャッジより遅いことがある（ノート PC・他の処理と同時・debug ビルド）。
-/// TL 2 秒 × 倍率 1.5 = 3 秒で切ると、ジャッジでは通る解答を TLE と言ってしまうので、
-/// 短い TL の問題でも 5 秒は待つ。
+/// A laptop, busy with other work, running a debug build, is slower than the
+/// judge. A 2s limit scaled by 1.5 would cut off at 3s and call a solution TLE
+/// that the judge accepts, so even short limits wait at least this long.
 const MIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
@@ -35,7 +35,8 @@ pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
             .as_deref(),
     )?;
     if resolved.origin == Origin::Inferred {
-        // 推定したら必ず対象を見せる（決定 D7）。
+        // Having guessed the problem, say which one out loud: submitting to the
+        // wrong one costs a penalty that cannot be taken back.
         ui::arrow(&resolved.describe(&package));
     }
 
@@ -118,10 +119,12 @@ fn report(suite: &TestSuite, outcomes: &[Outcome], timelimit: Duration) {
     }
 }
 
-/// 失敗した1ケースの中身。
+/// The details of one failed case.
 ///
-/// ラベルは実際の入出力の名前（`input` / `expected` / `output` / `stderr`）で揃える。
-/// 期待と実際は横に並べず別のブロックにし、食い違う行に `✗` を付ける。
+/// Labels are the names of the things themselves — `input`, `expected`, `output`,
+/// `stderr`. Expected and actual go in separate blocks rather than side by side,
+/// with `✗` against the lines that differ; competitive output is wide, and
+/// columns force a wrap exactly when the answer is long enough to be interesting.
 fn show_failure(suite: &TestSuite, outcome: &Outcome, timelimit: Duration) {
     let case = suite.cases.iter().find(|case| case.name == outcome.name);
     ui::info("");
@@ -160,11 +163,10 @@ fn show_failure(suite: &TestSuite, outcome: &Outcome, timelimit: Duration) {
     }
 }
 
-/// 標準エラーからパニックのメッセージだけ残す。
+/// Keeps the panic message and drops the rest.
 ///
-/// バックトレースは長いので既定では出さない（`runner` が `RUST_BACKTRACE=0` にする）。
-/// そのとき付いてくる「RUST_BACKTRACE を立てろ」の案内は、立て方を知っている人には
-/// 不要なので落とす。
+/// Backtraces are long, so `runner` sets `RUST_BACKTRACE=0`. The note about
+/// setting it that comes back in exchange is noise to anyone who would want it.
 fn clean_stderr(stderr: &str) -> String {
     stderr
         .lines()
@@ -194,7 +196,7 @@ mod tests {
         );
     }
 
-    /// 解答が自分でデバッグ出力しているときは、消さずにそのまま見せる。
+    /// A solution's own debug output is shown as it is, never filtered.
     #[test]
     fn ordinary_stderr_is_left_alone() {
         assert_eq!(clean_stderr("dbg: n = 8\n"), "dbg: n = 8");

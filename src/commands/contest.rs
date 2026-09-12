@@ -1,12 +1,12 @@
-//! `acrust new` と `acrust fetch`（設計 §4.1 / §3.2 / §3.3）。
+//! `acrust new` and `acrust fetch`.
 //!
-//! どちらも「コンテストの状態をローカルに反映する」同じ処理で、違いは
-//! パッケージを新しく作ってよいかどうかだけ。
+//! Both bring the local copy of a contest up to date; the only difference is
+//! whether creating the package is allowed.
 //!
-//! **既にあるものは壊さない**のが全体の原則:
-//! - `src/bin/*.rs` は解答が入っているので絶対に上書きしない
-//! - `Cargo.toml` は `toml_edit` で必要な項目だけ足す（コメントも書式も保つ）
-//! - テストケースは手で足したケースと手で直した `match` を残す
+//! Nothing that already exists is destroyed. `src/bin/*.rs` holds solutions and
+//! is never overwritten, `Cargo.toml` only gains the entries it is missing (via
+//! `toml_edit`, so comments and formatting survive), and test suites keep the
+//! cases and the `match` mode the user edited by hand.
 
 use crate::atcoder::scrape::{self, ProblemPage, TaskEntry};
 use crate::atcoder::AtCoderClient;
@@ -46,7 +46,7 @@ fn sync(contest: &str, may_create: bool, overwrite: bool) -> Result<()> {
     }
 
     let client = AtCoderClient::new(&config.config.atcoder)?;
-    // 過去問は未ログインでも取れるが、セッションがあるなら使う。
+    // Past contests are readable while logged out; use the session if there is one.
     let _ = client.load_session();
 
     let (entries, pages) = fetch_contest(&client, contest, &config)?;
@@ -71,7 +71,7 @@ fn sync(contest: &str, may_create: bool, overwrite: bool) -> Result<()> {
     Ok(())
 }
 
-/// `/tasks` と `/tasks_print` の 2 リクエストで 1 コンテスト分を取る（設計 §3.3）。
+/// One contest in two requests: `/tasks` and `/tasks_print`.
 fn fetch_contest(
     client: &AtCoderClient,
     contest: &str,
@@ -81,10 +81,9 @@ fn fetch_contest(
     let response = client.get(&tasks_url)?;
 
     if response.status.as_u16() == 404 {
-        // コンテストは存在するが未開始か、そもそも存在しないかを区別する（設計 §3.2）。
-        //
-        // どちらでも何も作らない。問題 URL もサンプルも取れない段階で src/bin だけ
-        // 置いても、開始後にもう一度 `new` を打つことになるので得が無い。
+        // Tell "not started yet" apart from "no such contest", and create nothing
+        // either way. A skeleton written before the problem URLs and samples exist
+        // buys nothing: `new` has to be run again once the contest opens.
         let top = client.get(&format!("https://atcoder.jp/contests/{contest}"))?;
         if top.status.is_success() {
             bail!("contest {contest} has not started yet");
@@ -132,9 +131,8 @@ fn fetch_contest(
     Ok((entries, pages))
 }
 
-/// `tasks_print` の問題を `/tasks` の行に対応づける。
-///
-/// 見出しのラベル（`A`、`Ex`、`001`）で突き合わせ、駄目なら出現順で対応させる。
+/// Lines the problems of `tasks_print` up with the rows of `/tasks`, by heading
+/// label (`A`, `Ex`, `001`) where they agree and by position where they do not.
 fn match_pages(entries: &[TaskEntry], pages: Vec<ProblemPage>) -> BTreeMap<String, ProblemPage> {
     let by_label: BTreeMap<&str, &TaskEntry> =
         entries.iter().map(|e| (e.label.as_str(), e)).collect();
@@ -153,7 +151,7 @@ fn match_pages(entries: &[TaskEntry], pages: Vec<ProblemPage>) -> BTreeMap<Strin
             .collect();
     }
 
-    // ラベルが揃わないときは出現順（`/tasks` と同じ順で並ぶことは確認済み）。
+    // Falling back to position is safe: the two pages do list in the same order.
     ui::warn("the headings do not match the problem list, so matching them in order of appearance");
     entries
         .iter()
@@ -162,7 +160,8 @@ fn match_pages(entries: &[TaskEntry], pages: Vec<ProblemPage>) -> BTreeMap<Strin
         .collect()
 }
 
-/// `tasks_print` が使えないときの経路。リクエスト間隔はクライアントが空ける。
+/// The slow path for contests whose `tasks_print` is unusable. The client spaces
+/// the requests out on its own.
 fn fetch_each_task(
     client: &AtCoderClient,
     contest: &str,
@@ -189,7 +188,6 @@ fn fetch_each_task(
     Ok(pages)
 }
 
-/// 取れた問題一覧から、作る問題を決める。
 fn problem_specs(entries: &[TaskEntry]) -> Vec<ProblemSpec> {
     entries
         .iter()
@@ -233,7 +231,8 @@ fn write_package(
     Ok(())
 }
 
-/// 問題ごとのテストケースを書く。手で足したケースと手で直した `match` は残す。
+/// Writes each problem's test suite, keeping hand-added cases and a hand-picked
+/// `match` mode.
 fn write_testcases(
     config: &LoadedConfig,
     contest: &str,
@@ -274,7 +273,7 @@ fn write_testcases(
 
 fn suite_for(page: &ProblemPage, timelimit_ms: Option<u64>) -> TestSuite {
     if page.interactive {
-        // インタラクティブ問題はサンプルテストの形にならない（設計 §3.3）。
+        // Interactive problems have no sample cases to compare against.
         return TestSuite::interactive(timelimit_ms);
     }
 
@@ -299,12 +298,13 @@ fn suite_for(page: &ProblemPage, timelimit_ms: Option<u64>) -> TestSuite {
     suite
 }
 
-/// 取得し直したときに、手で加えた変更を巻き戻さないための合流。
+/// Merges a re-fetch into what is already on disk, so a fetch never undoes an
+/// edit.
 ///
-/// - `match` と `[float]` は既存を優先する。複数解を許す問題で `words` に直す運用があるため
-///   （自動判定では絶対に分からない）
-/// - サンプル以外のケースは末尾に残す
-/// - `type` と `timelimit` は取得し直した値で更新する
+/// `match` and `[float]` stay as they are: a problem that accepts several answers
+/// is switched to `words` by hand, and nothing in the statement says so. Cases
+/// that are not samples are kept at the end. `type` and `timelimit` are taken
+/// from the fresh copy.
 fn merge_suite(existing: TestSuite, fresh: TestSuite) -> TestSuite {
     let fresh_names: Vec<&str> = fresh.cases.iter().map(|c| c.name.as_str()).collect();
     let extra: Vec<TestCase> = existing
@@ -387,11 +387,11 @@ mod tests {
         fresh.cases = vec![case("sample1", "new\n"), case("sample2", "new2\n")];
 
         let merged = merge_suite(existing, fresh);
-        // 取得し直した値で更新されるもの
+        // taken from the fresh copy
         assert_eq!(merged.timelimit.as_deref(), Some("3s"));
         assert_eq!(merged.cases[0].output, "new\n");
         assert_eq!(merged.cases[1].name, "sample2");
-        // 残さなければならないもの
+        // kept from what was on disk
         assert_eq!(merged.matching, Matching::Words);
         assert_eq!(merged.cases[2].name, "mycase");
         assert_eq!(merged.cases.len(), 3);

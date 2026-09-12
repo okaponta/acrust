@@ -1,11 +1,11 @@
-//! `acrust copy` — 解答をクリップボードに入れる。
+//! `acrust copy` — put a solution on the clipboard.
 //!
-//! AtCoder はコンテスト終了後の提出フォームを Cloudflare Turnstile で守っているので、
-//! 終了後の練習提出は `submit` では通らない（`commands::submit` 参照）。
-//! そのときにブラウザへ貼るための道具。
+//! Cloudflare Turnstile guards the submit form of a contest that has ended, so
+//! practice submissions cannot go through `submit` (see `commands::submit`).
+//! This is the way out: copy, then paste into the browser.
 //!
-//! 貼るのは `src/bin/{alias}.rs` そのもので、加工しない。`submit` が送るものと
-//! 同じにしておかないと「提出したもの = リポジトリの中身」が崩れる（決定 D13）。
+//! What is copied is `src/bin/{alias}.rs` byte for byte. Anything else and the
+//! promise that what you submitted is what the repository holds stops being true.
 
 use crate::clipboard;
 use crate::config::LoadedConfig;
@@ -24,7 +24,7 @@ pub fn run(problem: Option<String>) -> Result<()> {
             .ok()
             .as_deref(),
     )?;
-    // 何をクリップボードに載せたかは必ず見せる。貼る直前に取り違えると気づけない。
+    // Always name what was copied: a mix-up is invisible until after the paste.
     ui::arrow(&resolved.describe(&package));
 
     let source = std::fs::read_to_string(&resolved.bin.src_path)

@@ -1,7 +1,7 @@
-//! `acrust init` — リポジトリに `.acrust/` と `rust-toolchain.toml` を用意する。
+//! `acrust init` — lay down `.acrust/` and `rust-toolchain.toml` in a repository.
 //!
-//! 生成物はすべてバイナリに埋め込んだ既定値から作る（ネットワーク不要）。
-//! ジャッジ環境への追従は `acrust env update` の仕事。
+//! Everything written comes from defaults baked into the binary, so `init` works
+//! offline. Catching up with the judge environment is `acrust env update`'s job.
 
 use crate::config::{self, Config, LoadedConfig, DEFAULT_JUDGE_RUSTC};
 use crate::ui;
@@ -59,7 +59,7 @@ pub fn run(path: Option<PathBuf>, force: bool) -> Result<()> {
     )?;
     write(".cargo/config.toml", CARGO_CONFIG)?;
 
-    // config を読み直してから rust-toolchain.toml を判断する（pin-toolchain = false を尊重するため）。
+    // Re-read the config first: the user may have asked for pin-toolchain = false.
     let loaded = LoadedConfig::load(&root)?;
     if loaded.config.package.pin_toolchain {
         write(
@@ -81,7 +81,8 @@ pub fn run(path: Option<PathBuf>, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// ジャッジと同じ rustc に固定する（決定 D11）。
+/// Pins the toolchain to the judge's rustc, so a local build failure is a real
+/// one rather than a version difference nobody can see.
 pub fn rust_toolchain_toml(channel: &str) -> String {
     format!(
         "# Pinned to the same rustc AtCoder's judge uses. `acrust env update` keeps it in step.\n\
@@ -99,7 +100,7 @@ fn write_file(path: &Path, contents: &str) -> Result<()> {
     std::fs::write(path, contents).with_context(|| format!("could not write {}", path.display()))
 }
 
-/// 埋め込んだ既定の設定。`env update`（M5）が現行値との diff に使う。
+/// The embedded default config, which `env update` diffs the current one against.
 #[allow(dead_code)]
 pub fn default_config() -> Result<Config> {
     Config::parse(DEFAULT_CONFIG)
@@ -112,14 +113,14 @@ mod tests {
     #[test]
     fn the_embedded_dependencies_are_the_judge_environment() {
         let parsed: toml::Table = toml::from_str(DEFAULT_DEPENDENCIES).unwrap();
-        // ジャッジ環境（2025-10）の 68 クレートがそのまま入っていること。
+        // All 68 crates of the 2025-10 judge environment, unedited.
         assert_eq!(parsed.len(), 68, "crates: {}", parsed.len());
         assert_eq!(parsed["itertools"].as_str(), Some("=0.14.0"));
         assert_eq!(parsed["superslice"].as_str(), Some("=1.0.0"));
         assert_eq!(
             parsed["proconio"]["version"].as_str(),
             Some("=0.5.0"),
-            "proconio はジャッジと同じ 0.5.0 でなければならない"
+            "proconio has to be the 0.5.0 the judge uses"
         );
         assert!(parsed["proconio"]["features"]
             .as_array()
@@ -130,7 +131,7 @@ mod tests {
 
     #[test]
     fn the_embedded_template_compiles_as_rust_source() {
-        // テンプレートは丸ごと `src/bin/*.rs` になるので、少なくとも main が要る。
+        // The template becomes `src/bin/*.rs` verbatim, so it needs a main at least.
         assert!(DEFAULT_TEMPLATE_MAIN.contains("fn main()"));
         assert!(DEFAULT_TEMPLATE_MAIN.contains("proconio"));
     }
@@ -150,7 +151,7 @@ mod tests {
 
         run(Some(root.clone()), false).unwrap();
 
-        // 深いところから上に辿って設定を見つけられること。
+        // The config has to be findable by walking up from a nested directory.
         let deep = root.join("abc474").join("src").join("bin");
         std::fs::create_dir_all(&deep).unwrap();
         let loaded = LoadedConfig::find_from(&deep).unwrap();
@@ -164,7 +165,7 @@ mod tests {
             .join(".acrust/template/copy/.vscode/launch.json")
             .is_file());
 
-        // 2 回目は既に管理下なので断る。
+        // A second run refuses: the repository is already managed.
         let err = run(Some(root.clone()), false).unwrap_err().to_string();
         assert!(err.contains("--force"), "{err}");
 
