@@ -4,11 +4,12 @@
 //! 実データで、そのまま正解データとして使える。acrust が同じ HTML から取り出した
 //! 入出力例が **バイト単位で一致する**ことを確認する。
 //!
-//! `#[ignore]` にしてあるのは、リポジトリ外のファイルに依存するため（CI では走らない）。
-//! AtCoder の問題文をこのリポジトリに持ち込まないための措置でもある（設計 §5.3）。
+//! `live` feature が付いていないとビルドもされない。リポジトリ外のファイルに依存する
+//! ためで（CI では走らない）、AtCoder の問題文をこのリポジトリに持ち込まないための
+//! 措置でもある（設計 §5.3）。
 //!
 //! ```console
-//! $ cargo test --test acceptance_abc418 -- --ignored --nocapture
+//! $ cargo test --features live --test acceptance_abc418 -- --nocapture
 //! ```
 //!
 //! パスは `ACRUST_FIXTURES` / `ACRUST_REFERENCE_REPO` で差し替えられる。
@@ -90,7 +91,6 @@ fn parse_reference_yaml(text: &str) -> (String, Vec<(String, String, String)>) {
 }
 
 #[test]
-#[ignore = "リポジトリ外の実データに依存するため"]
 fn the_samples_match_cargo_competes_own_output_byte_for_byte() {
     let fixtures = fixtures();
     let reference = reference_repo().join("abc418/testcases");
@@ -178,7 +178,6 @@ fn the_samples_match_cargo_competes_own_output_byte_for_byte() {
 
 /// 取り出したものを TOML にして読み直しても、1 バイトも変わらないこと。
 #[test]
-#[ignore = "リポジトリ外の実データに依存するため"]
 fn the_generated_toml_round_trips_the_real_samples() {
     let fixtures = fixtures();
     if !fixtures.is_dir() {
