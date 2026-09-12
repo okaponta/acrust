@@ -48,3 +48,38 @@ fn the_login_form_is_still_behind_a_captcha() {
         "Turnstile が消えている。ID / パスワードでのログインを検討できる"
     );
 }
+
+/// **提出フォームにも Turnstile が入っている**（2026-09-12 に実地確認）。
+///
+/// これがある限り、素の POST での提出は csrf_token が正しくても
+/// 「エラーが発生しました。」で弾かれる。`/login` と同じ sitekey・同じ塞がれ方で、
+/// acrust は CAPTCHA を迂回しないので `submit` はブラウザに渡す形になる。
+///
+/// このテストが**落ちたら** AtCoder が提出から CAPTCHA を外したということなので、
+/// `acrust submit` の自動提出を復活できる。そのための見張り。
+///
+/// セッションが要る（`ACRUST_SESSION_FILE` か既定の保存先）。未ログインなら飛ばす。
+#[test]
+fn the_submit_form_is_still_behind_a_captcha() {
+    let client = AtCoderClient::new(&AtcoderConfig::default()).unwrap();
+    if !client.load_session().unwrap() {
+        eprintln!("skip: ログインしていないので提出フォームを見られません");
+        return;
+    }
+    let response = client
+        .get("https://atcoder.jp/contests/practice/submit")
+        .unwrap();
+    response.error_for_status().unwrap();
+    if html::user_screen_name(&response.body).is_none() {
+        eprintln!("skip: セッションが無効です");
+        return;
+    }
+    assert!(
+        response.body.contains("form-code-submit"),
+        "提出フォームが見つからない"
+    );
+    assert!(
+        auth::has_captcha(&response.body),
+        "提出フォームから Turnstile が消えている。自動提出を復活できるか検討する"
+    );
+}

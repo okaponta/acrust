@@ -304,6 +304,18 @@ mod tests {
         assert!(hidden_inputs(SUBMIT_PAGE, "dummy002").is_empty());
     }
 
+    /// AtCoder は hidden input の value を HTML エスケープして返す。
+    /// 実物の csrf_token は `var csrfToken` が `ykoqlSD+jmy3…`、hidden input が
+    /// `ykoqlSD&#43;jmy3…`（Go のテンプレートが `+` を `&#43;` にする）。
+    /// 戻さずに送ると csrf_token が食い違って弾かれる。
+    #[test]
+    fn an_html_escaped_hidden_value_comes_back_decoded() {
+        let page = r#"<form action="/contests/abc418/submit">
+          <input type="hidden" name="csrf_token" value="ykoqlSD&#43;jmy3Jss0=" /></form>"#;
+        let hidden = hidden_inputs(page, "abc418");
+        assert_eq!(hidden[0].1, "ykoqlSD+jmy3Jss0=");
+    }
+
     /// 将来 AtCoder が隠しフィールドを増やしても、そのまま送れること。
     #[test]
     fn an_extra_hidden_field_is_carried_along() {
