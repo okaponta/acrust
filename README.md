@@ -56,10 +56,14 @@ AtCoder の `/login` は **Cloudflare Turnstile (CAPTCHA)** で守られてい�
 $ acrust login
 ```
 
-1. ブラウザで https://atcoder.jp/login にログインする
+`acrust login` が https://atcoder.jp/login をブラウザで開くので、
+
+1. ログインする
 2. DevTools を開く
 3. Application（Safari は ストレージ）→ Cookies → `https://atcoder.jp`
 4. `REVEL_SESSION` の Value をコピーして貼り付ける（伏せ字で入力されます）
+
+ブラウザを開きたくないときは `acrust login --no-open`。
 
 `REVEL_SESSION=...` の形のまま貼っても、Cookie ヘッダを丸ごと貼っても受け付けます。スクリプトから使うときは `acrust login --cookie <値>`。
 
@@ -69,9 +73,9 @@ $ acrust login
 
 | コマンド | 説明 |
 |---|---|
-| `acrust init` | カレントのリポジトリに `.acrust/` と `rust-toolchain.toml` を生成する |
+| `acrust init` | 初期化処理を実施。`.acrust/` と `rust-toolchain.toml` を生成する |
 | `acrust login` / `logout` | AtCoder のセッションを取得・破棄する |
-| `acrust status` | 設定の場所・ジャッジ環境・ログイン状態・いま対象になる問題を表示する |
+| `acrust status` | 設定の場所・ジャッジ環境・ログイン状態・いま対象になる問題を表示し、問題がないかを言い切る |
 | `acrust new <contest>` | パッケージを生成し、サンプルを取得する |
 | `acrust fetch [contest]` | サンプルを取得し直す |
 | `acrust test [problem]` | ビルドしてサンプルテストを実行する |
@@ -79,7 +83,37 @@ $ acrust login
 | `acrust submit [problem]` | テストしてから提出し、結果を追跡する |
 | `acrust open [problem]` | ブラウザで問題を開く |
 | `acrust env update` | ジャッジ環境から依存・`Cargo.lock`・`edition`・rustc を再生成する |
-| `acrust migrate` | cargo-compete 形式のリポジトリを移行する（往復検証つき・dry-run 既定） |
+| `acrust migrate` | cargo-compete 形式のリポジトリを acrust 形式へ移行する（往復検証つき・dry-run 既定） |
+
+### いまどうなっているか
+
+```console
+$ acrust status
+acrust 0.1.0
+
+  ✓ 設定          /Users/okaponta/repos/atcoder-rust/.acrust/config.toml
+  ✓ ジャッジ環境  2025-10 / edition 2024 / 68 クレート / Cargo.lock あり
+  ✓ rustc         1.89.0（rust-toolchain.toml と一致）
+  ✓ セッション    /Users/okaponta/.local/share/acrust/session.json（600）
+  ✓ ログイン      okaponta
+  ✓ パッケージ    abc474
+  ✓ 問題          c（src/bin/c.rs）
+
+✓ 異常なし
+```
+
+足りないものがあれば、打つべきコマンドをそのまま並べます。
+
+```console
+  ! ジャッジ環境  2025-10 / edition 2024 / 68 クレート / Cargo.lock なし
+  ✗ ログイン      未ログイン
+
+! やることが 2 つあります
+    acrust env update   ジャッジと同じ Cargo.lock を取得する
+    acrust login        AtCoder にログインする
+```
+
+AtCoder に問い合わせずローカルの情報だけ見るなら `acrust status --offline`。
 
 ### `new` / `fetch` が壊さないもの
 
@@ -92,8 +126,9 @@ $ acrust login
 
 まっさらにしたいときは `acrust fetch --overwrite`。
 
-コンテスト開始前に `acrust new` を打つと、`/tasks` が 404 なのを検知してスケルトンだけ作ります。
-開始後に `acrust fetch` を打てば、問題 URL とサンプルが埋まります。
+コンテスト開始前に `acrust new` を打つと、まだ始まっていないことを伝えて**何も作りません**。
+問題 URL もサンプルも取れない段階で `src/bin/` だけ置いても、開始後にもう一度打つことに
+なるためです。開始後に `acrust new` を打てば、既にあるものは壊さずに足りないものだけ埋まります。
 
 ### テスト
 
@@ -106,9 +141,29 @@ $ acrust test a
 ✓ 2/2 AC
 ```
 
-ビルドは1回、ケースの実行は並列（既定で論理コア数）。判定は `AC` / `WA` / `RE` / `TLE` で、
-失敗したケースは入力・期待・実際を並べ、食い違う行に印を付けます。制限時間は問題の TL に
-`timeout-margin`（既定 1.5）を掛けた値です。全 AC なら終了コード 0、そうでなければ 1 を返します。
+ビルドは1回、ケースの実行は並列（既定で論理コア数）。判定は `AC` / `WA` / `RE` / `TLE`。
+全 AC なら終了コード 0、そうでなければ 1 を返します。
+
+失敗したケースは `input` / `expected` / `output` を別々に並べ、食い違う行に `✗` を付けます。
+
+```console
+── sample1 WA
+  input:
+    8
+    greentea
+  expected:
+    ✗ 1  Yes
+  output:
+    ✗ 1  No
+    ✗ 2  余計な行
+```
+
+`RE` ではパニックの位置とメッセージを出します（バックトレースは長いので出しません。
+`RUST_BACKTRACE=1` を自分で立てていればそれに従います）。
+
+打ち切りは問題の TL に `timeout-margin`（既定 1.5）を掛けた値、**ただし最低 5 秒**です。
+手元のマシンはジャッジより遅いことがあり、TL 2 秒 × 1.5 = 3 秒で切ると
+ジャッジでは通る解答を TLE と言ってしまうためです。
 
 インタラクティブ問題はサンプルテストの形にならないので、その旨を表示してスキップします。
 
@@ -120,8 +175,8 @@ $ acrust submit c
   AC   sample1      12 ms
   AC   sample2      11 ms
 ✓ 2/2 AC
-  ログイン:       okaponta
-  言語:           Rust (rustc 1.89.0) (id=6088)
+  ログイン:      okaponta
+  言語:          Rust (rustc 1.89.0) (id=6088)
 ✓ 提出しました  WJ  https://atcoder.jp/contests/abc474/submissions/12345678
   WJ   2s
   AC   5s           312 ms / 4.2 MB
@@ -174,7 +229,8 @@ $ acrust env update
 ── Rust (rustc 1.89.0) との差分
   rustc:         1.75.0 → 1.89.0
   edition:       2021 → 2024
-  依存クレート:   追加 64 / 削除 0 / 変更 2
+  Cargo.lock:    なし → 1682 行
+  依存クレート:  追加 64 / 削除 0 / 変更 2
     ~ itertools =0.11.0 → =0.14.0
     ~ proconio =0.4.5 → =0.5.0
 
@@ -199,13 +255,12 @@ cargo-compete 形式を読むのは `acrust migrate` の中だけです。`test`
 ```console
 $ acrust migrate
 
-  対象:           /Users/okaponta/repos/atcoder-rust
+  対象:          /Users/okaponta/repos/atcoder-rust
 
 ── 移行の内容
-  パッケージ:     426 個
-  bin:           2716 本（問題 URL は全件一致）
-  テストケース:   2716 ファイル / 7534 ケース（往復検証ずみ）
-  ...
+  パッケージ:    426 個
+  bin:           2716 本
+  テストケース:  2716 ファイル / 7534 ケース
 
 これは下見です。実際に書き換えるには --write を付けてください
 ```
@@ -234,11 +289,19 @@ acrust は「AtCoder とのやり取り + ビルド/テスト」に専念しま�
 
 ```console
 $ cargo fmt --all --check
-$ cargo clippy --all-targets -- -D warnings
+$ cargo clippy --all-targets --all-features -- -D warnings
 $ cargo test
+```
 
-# AtCoder に実際にアクセスするテスト（CI では走らせない）
-$ cargo test --test network -- --ignored --test-threads=1
+リポジトリの外に依存するテストは `live` feature で切り離してあります。
+普段の `cargo test` ではビルドもされないので、結果に `ignored` が並びません。
+
+```console
+# AtCoder に実際にアクセスする
+$ cargo test --features live --test network -- --test-threads=1
+
+# 手元の実リポジトリの実データと突き合わせる
+$ cargo test --features live --test acceptance_abc418 -- --nocapture
 ```
 
 テストの fixture に **AtCoder の問題文を含めないでください**。問題文の著作権は AtCoder と作問者にあります。パーサのテストに必要なのは HTML の構造だけなので、構造を再現した合成 HTML を使います。
