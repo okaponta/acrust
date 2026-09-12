@@ -383,10 +383,6 @@ fn write_settings(root: &Path, compete: &CompeteConfig) -> Result<()> {
             .as_deref()
             .unwrap_or(init::DEFAULT_DEPENDENCIES),
     )?;
-    package::write_new_file(
-        &root.join(".acrust/template/copy/.vscode/launch.json"),
-        include_str!("../../assets/template-launch.json"),
-    )?;
 
     if let Some(source) = &compete.cargo_lock {
         let source = root.join(source.trim_start_matches("./"));

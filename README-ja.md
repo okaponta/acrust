@@ -46,12 +46,12 @@ $ acrust submit a
 ```
 atcoder-rust/
 ├── .acrust/
-│   ├── config.toml               # 設定
+│   ├── config.toml
 │   └── template/
-│       ├── main.rs               # 新しい問題の src/bin/*.rs になる
-│       ├── dependencies.toml     # env update が生成する
-│       ├── Cargo.lock            # env update が取得する
-│       └── copy/                 # パッケージ直下にそのままコピーされる
+│       ├── main.rs
+│       ├── dependencies.toml
+│       ├── Cargo.lock
+│       └── copy/
 ├── rust-toolchain.toml           # ジャッジと同じ rustc に固定
 └── abc474/
     ├── Cargo.toml
@@ -61,13 +61,13 @@ atcoder-rust/
 
 `.acrust/` の下は好きに書き換えて構いません。
 
-- **`template/main.rs`** — 全問題の出発点。いつもの `use` やマクロ、入力まわりの定型を置く
-- **`template/copy/`** — パッケージ直下にそのままコピーされる。`.vscode/launch.json` が入っている。
-  パッケージに最初から置きたいものがあればここへ
-- **`template/dependencies.toml`** — パッケージに入る依存。`env update` が再生成するが、
-  書き換える前に必ず差分を見せるので、手で削ったものは毎回確認したうえで消える
-- **`config.toml`** — パッケージの配置先、`test` のプロファイルと並列数、`timeout-margin`、
-  問題を推定してよいか、`submit` が選ぶ言語など
+| | |
+|---|---|
+| `template/main.rs` | 新しい問題の `src/bin/*.rs` になる |
+| `template/copy/` | ここに置いたものがパッケージ直下にそのままコピーされる。既定では存在しないので、`.vscode/launch.json` や `.envrc`、`justfile` などを置きたい場合は自分で作る |
+| `template/dependencies.toml` | パッケージに入る依存。`env update` が再生成するが、書き換える前に差分を見せる |
+| `template/Cargo.lock` | `env update` が取得する、ジャッジと同じバージョン |
+| `config.toml` | パッケージの配置先、`test` のプロファイルと並列数、タイムアウト、問題の推定可否などの設定 |
 
 資格情報はリポジトリの外に置きます。セッションは `~/.local/share/acrust/session.json`
 （パーミッション 0600、`ACRUST_SESSION_FILE` で差し替え可）、キャッシュは `~/.cache/acrust/` です。

@@ -25,6 +25,8 @@ overflow-checks = true
 src = ".acrust/template/main.rs"
 dependencies = ".acrust/template/dependencies.toml"
 cargo-lock = ".acrust/template/Cargo.lock"
+# Anything in this directory is copied into every package as it is. It does not
+# exist until you make it: `.vscode/launch.json`, an `.envrc`, a `justfile`.
 copy-dir = ".acrust/template/copy"
 
 [testcases]

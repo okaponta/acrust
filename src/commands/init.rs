@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_CONFIG: &str = include_str!("../../assets/config.toml");
 pub const DEFAULT_TEMPLATE_MAIN: &str = include_str!("../../assets/template-main.rs");
 pub const DEFAULT_DEPENDENCIES: &str = include_str!("../../assets/template-dependencies.toml");
-const DEFAULT_LAUNCH_JSON: &str = include_str!("../../assets/template-launch.json");
 const ACRUST_GITIGNORE: &str = include_str!("../../assets/acrust-gitignore");
 const CARGO_CONFIG: &str = include_str!("../../assets/cargo-config.toml");
 
@@ -53,10 +52,6 @@ pub fn run(path: Option<PathBuf>, force: bool) -> Result<()> {
     write(".acrust/.gitignore", ACRUST_GITIGNORE)?;
     write(".acrust/template/main.rs", DEFAULT_TEMPLATE_MAIN)?;
     write(".acrust/template/dependencies.toml", DEFAULT_DEPENDENCIES)?;
-    write(
-        ".acrust/template/copy/.vscode/launch.json",
-        DEFAULT_LAUNCH_JSON,
-    )?;
     write(".cargo/config.toml", CARGO_CONFIG)?;
 
     // Re-read the config first: the user may have asked for pin-toolchain = false.
@@ -161,9 +156,9 @@ mod tests {
         assert!(loaded.template_dependencies().is_file());
         assert!(loaded.rust_toolchain_path().is_file());
         assert!(root.join(".cargo/config.toml").is_file());
-        assert!(root
-            .join(".acrust/template/copy/.vscode/launch.json")
-            .is_file());
+        // Nothing is planted in copy/: what belongs in every package is the
+        // user's to decide, and an editor's config is not everyone's.
+        assert!(!loaded.template_copy_dir().exists());
 
         // A second run refuses: the repository is already managed.
         let err = run(Some(root.clone()), false).unwrap_err().to_string();
