@@ -19,6 +19,25 @@ path = "src/lib.rs"
 name = "acrust"
 path = "src/main.rs"
 
+# リポジトリの外（AtCoder 本体・手元の実リポジトリ）に依存するテストを切り離す feature。
+#
+# `#[ignore]` だと `cargo test` の結果に "ignored" として毎回並び、
+# 「何か飛ばされている」と読めてしまう。feature にしておけば、
+# 普段の `cargo test` ではビルドもされず、結果にも出てこない。
+#
+#   cargo test --features live --test network           # AtCoder を叩く
+#   cargo test --features live --test acceptance_abc418 # 手元の実データと突き合わせる
+[features]
+live = []
+
+[[test]]
+name = "network"
+required-features = ["live"]
+
+[[test]]
+name = "acceptance_abc418"
+required-features = ["live"]
+
 [dependencies]
 anyhow = "1.0.104"
 cargo_metadata = "0.20"
