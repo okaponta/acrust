@@ -37,7 +37,7 @@ pub fn run(write: bool, allow_dirty: bool) -> Result<()> {
     ui::ok("移行しました");
     ui::info("");
     ui::info("次にやること:");
-    ui::info("  acrust env update   # ジャッジ環境（依存・Cargo.lock・rustc）に追従させる");
+    ui::info(crate::commands::NEXT_ENV_UPDATE);
     ui::info("  acrust test a       # どれか1問で動作を確かめる");
     ui::info("");
     ui::info("元に戻したいときは、コミット前なら `git checkout .` で戻せます");

@@ -173,7 +173,7 @@ fn report_rejection(response: &crate::atcoder::client::AtCoderResponse, page_had
         // 素の POST では csrf_token が正しくても弾かれる（`/login` と同じ塞がれ方）。
         // 開催中の提出はこれまでどおり通る。
         ui::warn(
-            "コンテストが終了しているため、submitは実行できません。copyを用いて手動で提出をお願いします。",
+            "コンテストが終了しているため、submitは実行できません。copyを用いて手動で提出をお願いします",
         );
         return;
     }

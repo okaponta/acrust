@@ -186,7 +186,7 @@ pub fn section(title: &str) {
 /// `block` と同じ見出しで、値が 1 行に収まるもの。桁は詰めない
 /// （`input:` や `stderr:` の見出しと同じ高さに揃えたいので）。
 pub fn inline(label: &str, value: &str) {
-    println!("  {label}: {value}");
+    println!("{label}: {value}");
 }
 
 /// 入力や標準エラーなど、そのまま見せたいテキスト。
@@ -196,16 +196,16 @@ pub fn block(label: &str, text: &str) {
 
 /// 長いテキストは頭だけ見せる。長い入力やパニックのメッセージで画面が流れるのを防ぐ。
 pub fn block_limited(label: &str, text: &str, max_lines: usize) {
-    println!("  {label}:");
+    println!("{label}:");
     let lines: Vec<&str> = text.lines().collect();
     for line in lines.iter().take(max_lines) {
-        println!("    {line}");
+        println!("  {line}");
     }
     if lines.len() > max_lines {
-        println!("    …（あと {} 行）", lines.len() - max_lines);
+        println!("  …（あと {} 行）", lines.len() - max_lines);
     }
     if text.is_empty() {
-        println!("    （空）");
+        println!("  （空）");
     }
 }
 
@@ -213,6 +213,9 @@ pub fn block_limited(label: &str, text: &str, max_lines: usize) {
 ///
 /// 食い違う行には `✗` を付ける。横に並べる形（`期待 / 実際`）をやめたのは、
 /// 1 行が長い問題だと折り返して読めなくなるため。
+///
+/// 字下げしないのは、そのままコピーして使えるようにするため（cargo-compete も
+/// 失敗したケースの中身を左端から出す）。行番号と `✗` のぶんだけ右にずれる。
 pub fn expected_and_output(expected: &str, actual: &str) {
     let want = crate::judge::lines(expected);
     let got = crate::judge::lines(actual);
@@ -232,9 +235,9 @@ fn numbered(
     number_width: usize,
     is_expected: bool,
 ) {
-    println!("  {label}:");
+    println!("{label}:");
     if lines.is_empty() {
-        println!("    （空）");
+        println!("  （空）");
         return;
     }
 
@@ -245,7 +248,7 @@ fn numbered(
     };
     let end = (start + MAX_BLOCK_LINES).min(lines.len());
     if start > 0 {
-        println!("    …（前略 {start} 行）");
+        println!("…（前略 {start} 行）");
     }
     for i in start..end {
         let line = lines[i];
@@ -258,13 +261,13 @@ fn numbered(
             } else {
                 line.red().to_string()
             };
-            println!("    {} {number}  {line}", marker.red());
+            println!("{} {number}  {line}", marker.red());
         } else {
-            println!("    {marker} {number}  {line}");
+            println!("{marker} {number}  {line}");
         }
     }
     if end < lines.len() {
-        println!("    …（あと {} 行）", lines.len() - end);
+        println!("…（あと {} 行）", lines.len() - end);
     }
 }
 

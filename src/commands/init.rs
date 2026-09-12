@@ -75,7 +75,7 @@ pub fn run(path: Option<PathBuf>, force: bool) -> Result<()> {
     ));
     ui::info("");
     ui::info("次にやること:");
-    ui::info("  acrust env update   # ジャッジ環境の依存・Cargo.lock・rustc を取得して固定する");
+    ui::info(crate::commands::NEXT_ENV_UPDATE);
     ui::info("  acrust login        # AtCoder にログインする");
     ui::info("  acrust new abc474   # コンテストのパッケージを作る");
     Ok(())

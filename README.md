@@ -151,15 +151,18 @@ $ acrust test a
 
 ```console
 ── sample1 WA
-  input:
-    8
-    greentea
-  expected:
-    ✗ 1  Yes
-  output:
-    ✗ 1  No
-    ✗ 2  余計な行
+input:
+  8
+  greentea
+expected:
+✗ 1  Yes
+output:
+✗ 1  No
+✗ 2  余計な行
 ```
+
+失敗したケースの中身は**字下げしません**。そのままコピーして使えるようにするためで、
+cargo-compete も同じように左端から出します。
 
 `RE` ではパニックの位置とメッセージを出します（バックトレースは長いので出しません。
 `RUST_BACKTRACE=1` を自分で立てていればそれに従います）。

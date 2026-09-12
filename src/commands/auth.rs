@@ -168,10 +168,7 @@ pub fn status(offline: bool) -> Result<()> {
         ui::summary(Mark::Ok, "異常なし");
         return Ok(());
     }
-    ui::summary(
-        Mark::Todo,
-        &format!("やることが {} つあります", todos.len()),
-    );
+    ui::summary(Mark::Todo, &format!("次にやること（{} 件）", todos.len()));
     let width = todos
         .iter()
         .map(|todo| todo.command.len())
@@ -408,7 +405,7 @@ mod tests {
         assert_eq!(language_update_version("https://example.com/"), None);
     }
 
-    /// 「やることが N つあります」に出る対応は、原因のある行だけから積まれる。
+    /// 「次にやること（N 件）」に並ぶ対応は、原因のある行だけから積まれる。
     #[test]
     fn a_missing_session_is_the_only_todo_when_everything_else_is_fine() {
         let mut todos = Vec::new();
