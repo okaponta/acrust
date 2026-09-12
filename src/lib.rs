@@ -7,6 +7,7 @@ pub mod atcoder;
 pub mod browser;
 pub mod cache;
 pub mod cli;
+pub mod clipboard;
 pub mod commands;
 pub mod config;
 pub mod judge;

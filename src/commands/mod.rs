@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod contest;
+pub mod copy;
 pub mod env;
 pub mod init;
 pub mod migrate;

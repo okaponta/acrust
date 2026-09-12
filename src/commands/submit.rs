@@ -107,7 +107,7 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
         }
         None => {
             let _ = cache::forget_language(&pattern);
-            report_rejection(&response, auth::has_captcha(&page.body), &submit_url);
+            report_rejection(&response, auth::has_captcha(&page.body));
             bail!("提出が受理されませんでした");
         }
     };
@@ -165,22 +165,16 @@ fn submit_form(
 ///
 /// AtCoder は理由を「エラーが発生しました。」としか言わないので、
 /// こちら側で分かること（CAPTCHA の有無・HTTP ステータス・セッションの生死）を添える。
-fn report_rejection(
-    response: &crate::atcoder::client::AtCoderResponse,
-    page_had_captcha: bool,
-    submit_url: &str,
-) {
+fn report_rejection(response: &crate::atcoder::client::AtCoderResponse, page_had_captcha: bool) {
     if page_had_captcha {
         // AtCoder は 2025-03 に Cloudflare Turnstile を入れ、**コンテスト終了後**の
         // 提出フォームにもこれを出すようになった（2026-09-12 に実地確認）。
         // 隠しフィールド `cf-turnstile-response` はブラウザ上の JS が差し込むので、
         // 素の POST では csrf_token が正しくても弾かれる（`/login` と同じ塞がれ方）。
-        //
-        // **開催中の提出はこれまでどおり通る**ので、ここで機能そのものを諦めさせない。
-        ui::warn("提出フォームが CAPTCHA（Cloudflare Turnstile）で守られていました");
-        ui::warn_detail("AtCoder はコンテスト終了後の提出にこれを出します。開催中なら通ります");
-        ui::warn_detail("終了したコンテストへはブラウザから提出してください:");
-        ui::warn_detail(&format!("  {submit_url}"));
+        // 開催中の提出はこれまでどおり通る。
+        ui::warn(
+            "コンテストが終了しているため、submitは実行できません。copyを用いて手動で提出をお願いします。",
+        );
         return;
     }
     ui::warn(&format!("AtCoder の応答: {}", response.status));

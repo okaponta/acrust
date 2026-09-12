@@ -94,6 +94,11 @@ enum Command {
         #[arg(long)]
         no_watch: bool,
     },
+    /// 解答をクリップボードにコピーする（ブラウザから手で提出するとき用）
+    Copy {
+        /// 問題（例: a）。省略時は mtime が最新のものを推定する
+        problem: Option<String>,
+    },
     /// ブラウザで問題を開く
     Open {
         /// 問題（例: a）。省略時は全問
@@ -136,6 +141,7 @@ pub fn run() -> Result<ExitCode> {
             force,
             no_watch,
         } => return commands::submit::run(problem, force, no_watch),
+        Command::Copy { problem } => commands::copy::run(problem)?,
         Command::Open { problem } => commands::open::run(problem)?,
         Command::Env { command } => match command {
             EnvCommand::Update { language_list, yes } => commands::env::update(language_list, yes)?,
@@ -173,7 +179,7 @@ mod tests {
 
     #[test]
     fn the_problem_argument_is_optional_everywhere_it_is_inferred() {
-        for command in ["test", "run", "submit", "open"] {
+        for command in ["test", "run", "submit", "copy", "open"] {
             Cli::try_parse_from(["acrust", command]).unwrap_or_else(|e| panic!("{command}: {e}"));
         }
     }

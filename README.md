@@ -83,6 +83,7 @@ $ acrust login
 | `acrust test [problem]` | ビルドしてサンプルテストを実行する |
 | `acrust run [problem]` | 標準入力を素通しして実行する |
 | `acrust submit [problem]` | テストしてから提出し、結果を追跡する |
+| `acrust copy [problem]` | 解答をクリップボードにコピーする（手で提出するとき用） |
 | `acrust open [problem]` | ブラウザで問題を開く |
 | `acrust env update` | ジャッジ環境から依存・`Cargo.lock`・`edition`・rustc を再生成する |
 | `acrust migrate` | cargo-compete 形式のリポジトリを acrust 形式へ移行する（往復検証つき・dry-run 既定） |
@@ -188,10 +189,37 @@ $ acrust submit c
 > AtCoder は 2025-03 に Cloudflare Turnstile を導入し、**終了したコンテストの提出フォーム**にも
 > これを出すようになりました。隠しフィールド `cf-turnstile-response` はブラウザ上の JS が
 > 差し込むため、素の POST は `csrf_token` が正しくても「エラーが発生しました。」で弾かれます。
-> **コンテスト開催中の提出はこれまでどおり通ります。** 終了後の練習提出はブラウザからどうぞ
-> （`acrust open` で問題ページを開けます）。acrust は CAPTCHA を迂回しません。
+> **コンテスト開催中の提出はこれまでどおり通ります。** acrust は CAPTCHA を迂回しません。
 >
-> この状態で提出しようとすると、acrust がその旨と提出ページの URL を出して止まります。
+> 終了したコンテストへ提出しようとすると、こう言って止まります。
+>
+> ```console
+> warning: コンテストが終了しているため、submitは実行できません。copyを用いて手動で提出をお願いします。
+> error: 提出が受理されませんでした
+> ```
+>
+> そのときは [`acrust copy`](#終了したコンテストへ手で提出する) を使ってください。
+
+### 終了したコンテストへ手で提出する
+
+`acrust copy` が `src/bin/{alias}.rs` をそのままクリップボードに入れ、貼る先の URL を出します。
+
+```console
+$ acrust copy c
+  → abc418 c (src/bin/c.rs)
+✓ コピーしました（5 行 / 86 バイト・pbcopy）
+
+貼り付けて提出してください:
+  https://atcoder.jp/contests/abc418/tasks/abc418_c
+  ブラウザで開くなら `acrust open c`
+```
+
+`submit` が送るものと**同じバイト列**を載せます（加工しません）。問題を省略すると
+`test` / `submit` と同じく mtime が最新の `src/bin/*.rs` を推定し、対象を必ず表示します。
+
+コピーには OS 標準のコマンドを使います（macOS は `pbcopy`、Windows は `clip`、
+それ以外は `wl-copy` → `xclip` → `xsel` の順に試す）。クレートを足していないので、
+Linux で X11 / Wayland の開発パッケージを要求することはありません。
 
 提出するのは常に `src/bin/{alias}.rs` そのもので、差し替え口はありません。「提出したもの = リポジトリの中身」が常に成り立ちます。
 
