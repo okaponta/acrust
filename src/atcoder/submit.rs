@@ -51,6 +51,42 @@ pub fn parse_languages(html_text: &str, screen_name: Option<&str>) -> Vec<Langua
         .collect()
 }
 
+/// 提出フォームの隠しフィールドを、ページに書かれている通りに全部集める。
+///
+/// `csrf_token` だけを拾うのではなくフォームごと写すのは、AtCoder が隠しフィールドを
+/// 増やしたときに黙って弾かれないようにするため（ブラウザは当然それも送る）。
+/// フォームが見つからなければ空を返すので、呼び出し側が `csrf_token` だけで組める。
+pub fn hidden_inputs(page: &str, contest: &str) -> Vec<(String, String)> {
+    let document = Html::parse_document(page);
+    let form = selector("form");
+    let hidden = selector(r#"input[type="hidden"]"#);
+    let action = format!("/contests/{contest}/submit");
+
+    document
+        .select(&form)
+        .find(|element| {
+            element
+                .value()
+                .attr("action")
+                .is_some_and(|value| value.ends_with(&action))
+        })
+        .map(|form| {
+            form.select(&hidden)
+                .filter_map(|input| {
+                    let name = input.value().attr("name")?.trim();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    Some((
+                        name.to_owned(),
+                        input.value().attr("value").unwrap_or_default().to_owned(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// `^Rust \(rustc` のような正規表現で言語を選ぶ。
 pub fn pick_language(languages: &[Language], pattern: &str) -> Result<Language> {
     let regex = regex::Regex::new(pattern)
@@ -217,7 +253,8 @@ mod tests {
 
     /// 実物と同じ形。言語の `<select>` が問題ごとに繰り返される。
     const SUBMIT_PAGE: &str = r#"
-<form action="" method="POST">
+<form action="/contests/dummy001/submit" method="POST">
+  <input type="hidden" name="csrf_token" value="tok+en/=" />
   <select id="select-task" name="data.TaskScreenName">
     <option value="dummy001_a">A - Alpha</option>
     <option value="dummy001_b">B - Bravo</option>
@@ -257,6 +294,28 @@ mod tests {
         assert!(pick_language(&languages, r"^Rust \(rustc").is_ok());
         // 重複は畳む（同じ言語が問題の数だけ並ぶため）。
         assert_eq!(languages.iter().filter(|l| l.id == "6088").count(), 1);
+    }
+
+    #[test]
+    fn the_hidden_fields_of_the_submit_form_are_copied_verbatim() {
+        let hidden = hidden_inputs(SUBMIT_PAGE, "dummy001");
+        assert_eq!(hidden, [("csrf_token".to_owned(), "tok+en/=".to_owned())]);
+        // 別のコンテストのフォームを拾わない。
+        assert!(hidden_inputs(SUBMIT_PAGE, "dummy002").is_empty());
+    }
+
+    /// 将来 AtCoder が隠しフィールドを増やしても、そのまま送れること。
+    #[test]
+    fn an_extra_hidden_field_is_carried_along() {
+        let page = SUBMIT_PAGE.replace(
+            r#"<input type="hidden" name="csrf_token" value="tok+en/=" />"#,
+            r#"<input type="hidden" name="csrf_token" value="tok+en/=" />
+               <input type="hidden" name="data.SomethingNew" value="42" />"#,
+        );
+        let hidden = hidden_inputs(&page, "dummy001");
+        assert_eq!(hidden.len(), 2, "{hidden:?}");
+        assert_eq!(hidden[1].0, "data.SomethingNew");
+        assert_eq!(hidden[1].1, "42");
     }
 
     #[test]
