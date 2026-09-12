@@ -6,8 +6,6 @@ version = 1
 [contest]
 # コンテストパッケージの配置先。{contest} が展開される。
 path = "./{contest}"
-# /tasks が取れない（＝コンテスト開始前）ときに作る問題。
-default-problems = ["a", "b", "c", "d", "e", "f", "g"]
 
 [package]
 # 生成する Cargo.toml の edition。`acrust env update` がジャッジ環境に追従させる。
@@ -36,7 +34,7 @@ path = "{package}/testcases/{problem}.toml"
 [test]
 profile = "dev"        # dev | release
 jobs = 0               # 0 = 論理コア数
-timeout-margin = 1.5   # 問題の TL に掛ける倍率
+timeout-margin = 1.5   # 問題の TL に掛ける倍率。ただし最低 5 秒は待つ
 resolve = "mtime"      # 引数省略時の問題推定: mtime | single | never
 
 [submit]
