@@ -11,28 +11,36 @@
 //! $ cargo test --features live --test acceptance_abc418 -- --nocapture
 //! ```
 //!
-//! `ACRUST_FIXTURES` and `ACRUST_REFERENCE_REPO` override where it looks.
+//! Both paths come from the environment — `ACRUST_FIXTURES` for the saved pages
+//! and `ACRUST_REFERENCE_REPO` for the cargo-compete repository — and the tests
+//! skip when they are not set.
 
 use acrust::atcoder::scrape;
 use acrust::testcases::{Matching, SuiteKind, TestSuite};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-fn fixtures() -> PathBuf {
-    std::env::var("ACRUST_FIXTURES")
-        .unwrap_or_else(|_| "/path/to/acrust-fixtures".to_owned())
-        .into()
+/// Where the real pages live. There is no default: the directory is outside the
+/// repository and named differently on every machine, so an unset variable means
+/// "not available here" rather than a guess that fails as a missing file.
+fn fixtures() -> Option<PathBuf> {
+    directory("ACRUST_FIXTURES")
 }
 
-fn reference_repo() -> PathBuf {
-    std::env::var("ACRUST_REFERENCE_REPO")
-        .unwrap_or_else(|_| {
-            format!(
-                "{}/repos/atcoder-rust",
-                std::env::var("HOME").unwrap_or_default()
-            )
-        })
-        .into()
+fn reference_repo() -> Option<PathBuf> {
+    directory("ACRUST_REFERENCE_REPO")
+}
+
+fn directory(variable: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(std::env::var_os(variable)?);
+    if path.is_dir() {
+        return Some(path);
+    }
+    eprintln!(
+        "skip: {variable} is set to {}, which is not a directory",
+        path.display()
+    );
+    None
 }
 
 /// Reads case names and data out of the YAML cargo-compete wrote.
@@ -91,14 +99,13 @@ fn parse_reference_yaml(text: &str) -> (String, Vec<(String, String, String)>) {
 
 #[test]
 fn the_samples_match_cargo_competes_own_output_byte_for_byte() {
-    let fixtures = fixtures();
-    let reference = reference_repo().join("abc418/testcases");
-    if !fixtures.is_dir() || !reference.is_dir() {
-        eprintln!(
-            "skip: need both fixtures={} and reference={}",
-            fixtures.display(),
-            reference.display()
-        );
+    let (Some(fixtures), Some(reference)) = (fixtures(), reference_repo()) else {
+        eprintln!("skip: set ACRUST_FIXTURES and ACRUST_REFERENCE_REPO to run this");
+        return;
+    };
+    let reference = reference.join("abc418/testcases");
+    if !reference.is_dir() {
+        eprintln!("skip: {} is not there", reference.display());
         return;
     }
 
@@ -178,11 +185,10 @@ fn the_samples_match_cargo_competes_own_output_byte_for_byte() {
 /// Writing what was scraped as TOML and reading it back changes not one byte.
 #[test]
 fn the_generated_toml_round_trips_the_real_samples() {
-    let fixtures = fixtures();
-    if !fixtures.is_dir() {
-        eprintln!("skip: {} is not there", fixtures.display());
+    let Some(fixtures) = fixtures() else {
+        eprintln!("skip: set ACRUST_FIXTURES to run this");
         return;
-    }
+    };
     let printed = std::fs::read_to_string(fixtures.join("abc418_tasks_print.html")).unwrap();
     let pages = scrape::parse_tasks_print(&printed).unwrap();
 
