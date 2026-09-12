@@ -172,8 +172,13 @@ pub fn warn_and_fix_permissions(path: &Path) -> Result<()> {
         .mode()
         & 0o777;
     if mode & 0o077 != 0 {
+        // パスワード同等のものが他ユーザーから読める状態は放置できないので、
+        // 知らせたうえでこちらで締める（`chmod` を促すだけでは手遅れになりうる）。
         crate::ui::warn(&format!(
-            "{} のパーミッションが {mode:04o} でした。セッションクッキーはパスワード同等なので 0600 に直します",
+            "セッションファイルが他のユーザーからも読める状態（{mode:o}）でした"
+        ));
+        crate::ui::warn_detail(&format!(
+            "パスワードと同じものなので 600 に直しました: {}",
             path.display()
         ));
         set_mode(path, 0o600)?;

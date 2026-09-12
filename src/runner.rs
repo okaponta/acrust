@@ -175,6 +175,15 @@ fn run_case(
     }
 }
 
+/// RE のときに見たいのはパニックの位置とメッセージで、バックトレースは長いだけ。
+///
+/// 既定では出さないが、自分で `RUST_BACKTRACE` を立てている人の設定は尊重する。
+fn backtrace_env() -> Option<(&'static str, &'static str)> {
+    std::env::var_os("RUST_BACKTRACE")
+        .is_none()
+        .then_some(("RUST_BACKTRACE", "0"))
+}
+
 struct Run {
     stdout: String,
     stderr: String,
@@ -194,8 +203,7 @@ fn execute(executable: &Path, input: &str, timeout: Duration) -> Result<Run> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        // パニックの位置が分かるようにしておく。
-        .env("RUST_BACKTRACE", "1")
+        .envs(backtrace_env())
         .spawn()
         .with_context(|| format!("{} を起動できませんでした", executable.display()))?;
 

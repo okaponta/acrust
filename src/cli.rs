@@ -10,10 +10,7 @@ use std::process::ExitCode;
 #[command(
     name = "acrust",
     version,
-    about = "AtCoder × Rust 専用の競技プログラミング支援ツール",
-    long_about = "AtCoder × Rust 専用の競技プログラミング支援ツール。\n\
-                  ジャッジ環境の依存クレートと rustc に追従し、\n\
-                  サンプルの取得・テスト・提出までを1本のバイナリで行う。"
+    about = "AtCoder × Rust 専用の競技プログラミング支援ツール"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -27,6 +24,9 @@ enum Command {
         /// REVEL_SESSION の値。省略時は対話入力（伏せ字）
         #[arg(long, value_name = "REVEL_SESSION")]
         cookie: Option<String>,
+        /// AtCoder のページをブラウザで開かない
+        #[arg(long)]
+        no_open: bool,
     },
     /// 保存済みのセッションを破棄する
     Logout,
@@ -36,7 +36,7 @@ enum Command {
         #[arg(long)]
         offline: bool,
     },
-    /// カレントのリポジトリに .acrust/ と rust-toolchain.toml を生成する
+    /// 初期化処理を実施。.acrust/ と rust-toolchain.toml を生成する
     Init {
         /// 対象ディレクトリ（既定: カレントディレクトリ）
         #[arg(long, value_name = "DIR")]
@@ -45,7 +45,7 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// cargo-compete 形式のリポジトリを acrust 形式へ移行する（往復検証つき）
+    /// cargo-compete 形式のリポジトリを acrust 形式へ移行する
     Migrate {
         /// 実際に書き込む（既定は差分レポートのみ）
         #[arg(long)]
@@ -108,7 +108,7 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum EnvCommand {
-    /// 依存クレート・Cargo.lock・edition・rustc バージョンを取得して更新する
+    /// ジャッジが使っている rustc・edition・依存クレートを調べて、設定を合わせる
     Update {
         /// 言語一覧ページの URL（新しい言語アップデートを指すときに使う）
         #[arg(long, value_name = "URL")]
@@ -122,7 +122,7 @@ enum EnvCommand {
 pub fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Login { cookie } => commands::auth::login(cookie)?,
+        Command::Login { cookie, no_open } => commands::auth::login(cookie, no_open)?,
         Command::Logout => commands::auth::logout()?,
         Command::Status { offline } => commands::auth::status(offline)?,
         Command::Init { path, force } => commands::init::run(path, force)?,

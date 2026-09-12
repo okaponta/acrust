@@ -16,6 +16,13 @@ use std::time::Duration;
 /// 制限時間が取れなかった問題で使う値。
 const FALLBACK_TIMELIMIT: Duration = Duration::from_secs(10);
 
+/// 打ち切りまでの最低待ち時間。
+///
+/// 手元のマシンはジャッジより遅いことがある（ノート PC・他の処理と同時・debug ビルド）。
+/// TL 2 秒 × 倍率 1.5 = 3 秒で切ると、ジャッジでは通る解答を TLE と言ってしまうので、
+/// 短い TL の問題でも 5 秒は待つ。
+const MIN_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
     let config = LoadedConfig::find()?;
     let package = Package::find()?;
@@ -65,7 +72,9 @@ pub fn run(problem: Option<String>, release: bool) -> Result<ExitCode> {
         .timelimit_ms()
         .map(Duration::from_millis)
         .unwrap_or(FALLBACK_TIMELIMIT);
-    let timeout = timelimit.mul_f64(config.config.test.timeout_margin.max(1.0));
+    let timeout = timelimit
+        .mul_f64(config.config.test.timeout_margin.max(1.0))
+        .max(MIN_TIMEOUT);
 
     let outcomes = runner::run_cases(
         &executable,
@@ -109,17 +118,21 @@ fn report(suite: &TestSuite, outcomes: &[Outcome], timelimit: Duration) {
     }
 }
 
+/// 失敗した1ケースの中身。
+///
+/// ラベルは実際の入出力の名前（`input` / `expected` / `output` / `stderr`）で揃える。
+/// 期待と実際は横に並べず別のブロックにし、食い違う行に `✗` を付ける。
 fn show_failure(suite: &TestSuite, outcome: &Outcome, timelimit: Duration) {
     let case = suite.cases.iter().find(|case| case.name == outcome.name);
     ui::info("");
     ui::section(&format!("{} {}", outcome.name, outcome.verdict.label()));
 
     if let Some(case) = case {
-        ui::block("入力", &case.input);
+        ui::block("input", &case.input);
         match outcome.verdict {
             Verdict::TimeLimitExceeded => {
-                ui::field(
-                    "制限時間",
+                ui::inline(
+                    "timelimit",
                     &format!(
                         "{} ms を超えました（{} ms で打ち切り）",
                         timelimit.as_millis(),
@@ -129,20 +142,62 @@ fn show_failure(suite: &TestSuite, outcome: &Outcome, timelimit: Duration) {
             }
             Verdict::RuntimeError => {
                 if let Some(status) = &outcome.status {
-                    ui::field("終了状態", status);
+                    ui::inline("exit", status);
                 }
             }
             _ => {
-                ui::diff("期待", &case.output, "実際", &outcome.stdout);
+                ui::expected_and_output(&case.output, &outcome.stdout);
             }
         }
         if outcome.verdict != Verdict::WrongAnswer && !outcome.stdout.trim().is_empty() {
-            ui::block("ここまでの出力", &outcome.stdout);
+            ui::block("output", &outcome.stdout);
         }
     }
 
-    if !outcome.stderr.trim().is_empty() {
-        // バックトレースは全部出すと画面が流れる。パニックの位置が分かれば十分。
-        ui::block_limited("標準エラー", outcome.stderr.trim(), 12);
+    let stderr = clean_stderr(&outcome.stderr);
+    if !stderr.is_empty() {
+        ui::block("stderr", &stderr);
+    }
+}
+
+/// 標準エラーからパニックのメッセージだけ残す。
+///
+/// バックトレースは長いので既定では出さない（`runner` が `RUST_BACKTRACE=0` にする）。
+/// そのとき付いてくる「RUST_BACKTRACE を立てろ」の案内は、立て方を知っている人には
+/// 不要なので落とす。
+fn clean_stderr(stderr: &str) -> String {
+    stderr
+        .lines()
+        .filter(|line| {
+            !line
+                .trim_start()
+                .starts_with("note: run with `RUST_BACKTRACE")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_backtrace_hint_is_not_part_of_the_panic_message() {
+        let stderr = "\nthread 'main' panicked at src/bin/a.rs:2:65:\n\
+                      わざと落とす\n\
+                      note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n";
+        assert_eq!(
+            clean_stderr(stderr),
+            "thread 'main' panicked at src/bin/a.rs:2:65:\nわざと落とす"
+        );
+    }
+
+    /// 解答が自分でデバッグ出力しているときは、消さずにそのまま見せる。
+    #[test]
+    fn ordinary_stderr_is_left_alone() {
+        assert_eq!(clean_stderr("dbg: n = 8\n"), "dbg: n = 8");
+        assert_eq!(clean_stderr("   \n"), "");
     }
 }
