@@ -1,43 +1,43 @@
-//! 問題一覧とサンプルケースの取り出し（設計 §3.2 / §3.3）。
+//! Reading the problem list and the sample cases.
 //!
-//! 主経路は `/contests/{contest}/tasks_print` で、**全問の入出力例が 1 ページに入っている**。
-//! `/tasks` と合わせて 1 コンテストあたり 2 リクエストで済む。
+//! The main route is `/contests/{contest}/tasks_print`, which carries the samples
+//! for every problem on one page; together with `/tasks` that is two requests per
+//! contest.
 //!
-//! パースは意図的に緩くしてある。AtCoder の HTML は年代で揺れがあり、
-//! - `span.lang-ja` が無い古い問題
-//! - 日本語版が無く `Sample Input` しかない問題
-//! - 解説の `<p>` が `<pre>` の後ろに付く問題
-//!
-//! のいずれでも壊れないようにしている。壊れたときは「どの問題の何が取れなかったか」を言う。
+//! The parsing is deliberately loose. AtCoder's markup drifts with the years, and
+//! all of these exist in the archive: problems with no `span.lang-ja`, problems
+//! with no Japanese version at all, and problems whose explanatory `<p>` trails
+//! after the `<pre>`. None of them should break a fetch of the rest.
 
 use crate::atcoder::html;
 use anyhow::{anyhow, Result};
 use scraper::{ElementRef, Html, Selector};
 use std::sync::OnceLock;
 
-/// `/tasks` の1行。
+/// One row of `/tasks`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskEntry {
-    /// 表の先頭列（`A`、`Ex`、`001` など）。
+    /// The first column: `A`, `Ex`, `001`.
     pub label: String,
-    /// `src/bin/{alias}.rs` になる名前。label を小文字にしたもの。
+    /// The lowercased label, which becomes `src/bin/{alias}.rs`.
     pub alias: String,
-    /// `abc042` の C が `arc058_a` になるような、規則から導けない ID（設計 §4.8）。
+    /// The id in the URL. There is no rule that derives it: problem C of `abc042`
+    /// is `arc058_a`, so it has to be read off the page.
     pub screen_name: String,
     pub title: String,
     pub timelimit_ms: Option<u64>,
 }
 
-/// `tasks_print` から取り出した1問。
+/// One problem, as read out of `tasks_print`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProblemPage {
     pub label: String,
     pub title: String,
     pub timelimit_ms: Option<u64>,
     pub samples: Vec<Sample>,
-    /// インタラクティブ問題はサンプルテストができない（設計 §3.3）。
+    /// Interactive problems cannot be sample-tested at all.
     pub interactive: bool,
-    /// 誤差ジャッジなら許容誤差。
+    /// Set when the problem is judged with a tolerance.
     pub float: Option<FloatTolerance>,
 }
 
@@ -47,9 +47,9 @@ pub struct Sample {
     pub output: String,
 }
 
-/// 「絶対誤差または相対誤差が `10^{-6}` 以下」のような判定条件。
+/// A condition such as "absolute or relative error at most `10^{-6}`".
 ///
-/// 片方しか書かれていない問題があるので、それぞれ独立に持つ。
+/// The two are held separately because plenty of problems name only one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatTolerance {
     pub relative: Option<f64>,
@@ -60,7 +60,6 @@ fn selector(s: &'static str) -> Selector {
     Selector::parse(s).expect("static selector is valid")
 }
 
-/// `/contests/{contest}/tasks` をパースする。
 pub fn parse_task_list(html_text: &str, contest: &str) -> Result<Vec<TaskEntry>> {
     let document = Html::parse_document(html_text);
     let row = selector("table tbody tr");
@@ -111,12 +110,12 @@ pub fn parse_task_list(html_text: &str, contest: &str) -> Result<Vec<TaskEntry>>
     Ok(entries)
 }
 
-/// `A` -> `a`、`Ex` -> `ex`、`001` -> `001`。
+/// `A` -> `a`, `Ex` -> `ex`, `001` -> `001`.
 fn alias_for(label: &str) -> String {
     label.trim().to_lowercase()
 }
 
-/// `/contests/{contest}/tasks_print` をパースする。1 ページに全問入っている。
+/// Parses `tasks_print`, which holds every problem of the contest.
 pub fn parse_tasks_print(html_text: &str) -> Result<Vec<ProblemPage>> {
     let document = Html::parse_document(html_text);
     let container = selector("div.col-sm-12");
@@ -134,7 +133,7 @@ pub fn parse_tasks_print(html_text: &str) -> Result<Vec<ProblemPage>> {
     Ok(problems)
 }
 
-/// 個別の問題ページ（`/contests/{c}/tasks/{screen_name}`）。tasks_print が使えないときの経路。
+/// A single problem page, for the contests where `tasks_print` is not usable.
 pub fn parse_task_page(html_text: &str) -> Result<ProblemPage> {
     let document = Html::parse_document(html_text);
     let container = selector("div.col-sm-12");
@@ -150,7 +149,8 @@ fn parse_problem_element(element: ElementRef) -> Result<ProblemPage> {
         .select(&selector("span.h2"))
         .next()
         .ok_or_else(|| anyhow!("could not find the problem heading"))?;
-    // 個別ページの見出しには Editorial へのリンクがぶら下がるので、直下のテキストだけを使う。
+    // On a single problem page the heading has an Editorial link hanging off it,
+    // so only the text directly under it counts.
     let heading_text = direct_text_of(heading);
     let (label, title) = split_heading(&heading_text);
 
@@ -159,7 +159,7 @@ fn parse_problem_element(element: ElementRef) -> Result<ProblemPage> {
         .map(|p| text_of(p))
         .find_map(|text| parse_time_limit(&text));
 
-    // 日本語版があればそれを、無ければ全体を対象にする（古い問題は lang 分割が無い）。
+    // Prefer the Japanese half; older problems are not split by language at all.
     let statement = element
         .select(&selector("span.lang-ja"))
         .next()
@@ -179,7 +179,7 @@ fn parse_problem_element(element: ElementRef) -> Result<ProblemPage> {
     })
 }
 
-/// `A - I'm a teapot` を `("A", "I'm a teapot")` に割る。
+/// Splits `A - I'm a teapot` into `("A", "I'm a teapot")`.
 fn split_heading(heading: &str) -> (String, String) {
     match heading.split_once(" - ") {
         Some((label, title)) => (label.trim().to_owned(), title.trim().to_owned()),
@@ -187,9 +187,8 @@ fn split_heading(heading: &str) -> (String, String) {
     }
 }
 
-/// `div.part > section` を走査し、h3 の番号で入力例と出力例をペアにする。
-///
-/// 順序に依存しないのは、部分点付きの問題などで `<pre>` が余分に出ることがあるため。
+/// Pairs inputs with outputs by the number in the `h3`, never by document order:
+/// problems with partial scoring carry extra `<pre>` blocks in between.
 fn collect_samples(statement: ElementRef) -> Vec<Sample> {
     let section = selector("div.part section");
     let heading = selector("h3");
@@ -205,7 +204,7 @@ fn collect_samples(statement: ElementRef) -> Vec<Sample> {
         let Some((kind, number)) = classify_sample_heading(&text_of(h3)) else {
             continue;
         };
-        // 解説の <p> が後ろに付くことがあるので、最初の <pre> だけを取る。
+        // Only the first <pre>; an explanatory <p> can follow it in the section.
         let Some(pre) = section.select(&pre).next() else {
             continue;
         };
@@ -235,7 +234,8 @@ enum SampleKind {
     Output,
 }
 
-/// `入力例 1` / `Sample Input 1` を見分ける。`入力`（書式の説明）は拾わない。
+/// Tells `入力例 1` / `Sample Input 1` apart. A bare `入力` is the input *format*
+/// section, and must not be mistaken for a case.
 fn classify_sample_heading(heading: &str) -> Option<(SampleKind, u32)> {
     static INPUT: OnceLock<regex::Regex> = OnceLock::new();
     static OUTPUT: OnceLock<regex::Regex> = OnceLock::new();
@@ -255,9 +255,8 @@ fn classify_sample_heading(heading: &str) -> Option<(SampleKind, u32)> {
     None
 }
 
-/// `<pre>` の中身をテストケースの生データに戻す。
-///
-/// タグを剥がし、実体参照を戻し、CRLF を LF にし、末尾の改行を1つに揃える。
+/// Turns the contents of a `<pre>` back into the raw bytes of a test case: tags
+/// off, entities undone, CRLF to LF, exactly one trailing newline.
 fn normalize_sample(inner_html: &str) -> String {
     let text = html::decode_entities(&strip_tags(inner_html));
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -275,7 +274,6 @@ fn strip_tags(html_text: &str) -> String {
     re.replace_all(html_text, "").into_owned()
 }
 
-/// インタラクティブ問題の判定（設計 §3.3）。
 fn looks_interactive(statement: &str) -> bool {
     [
         "インタラクティブ",
@@ -287,10 +285,11 @@ fn looks_interactive(statement: &str) -> bool {
     .any(|needle| statement.contains(needle))
 }
 
-/// 誤差ジャッジの判定と許容誤差の取り出し。
+/// Whether the problem is judged with a tolerance, and how much.
 ///
-/// 許容誤差まで読むのは、問題ごとに `10^{-2}` から `10^{-10}` まで幅があるため。
-/// 一律に厳しい値を使うと、正しい解答が手元でだけ WA になる。
+/// The figure is read rather than assumed because problems range from `10^{-2}`
+/// to `10^{-10}`. Picking one strict value everywhere would fail correct answers
+/// locally that the judge accepts.
 fn detect_float_tolerance(statement: &str) -> Option<FloatTolerance> {
     let mentions_error = statement.contains("誤差")
         || statement.contains("absolute or relative error")
@@ -300,8 +299,8 @@ fn detect_float_tolerance(statement: &str) -> Option<FloatTolerance> {
         return None;
     }
 
-    // 英語は「absolute or relative error」と1つにまとめて書くので、
-    // 「absolute error」を探すだけでは絶対誤差を取りこぼす。
+    // The English text folds both into "absolute or relative error", so looking
+    // for "absolute error" alone misses half the problems.
     let both_in_english = statement.contains("absolute or relative error")
         || statement.contains("relative or absolute error");
     let absolute =
@@ -310,7 +309,7 @@ fn detect_float_tolerance(statement: &str) -> Option<FloatTolerance> {
         statement.contains("相対誤差") || statement.contains("relative error") || both_in_english;
     let tolerance = extract_tolerance(statement).unwrap_or(1e-9);
 
-    // どちらとも書いていないが「誤差」はある、という書き方もあるので両方に効かせる。
+    // Some statements say only "誤差" without naming which; honour both.
     let (relative, absolute) = if relative || absolute {
         (relative, absolute)
     } else {
@@ -323,7 +322,7 @@ fn detect_float_tolerance(statement: &str) -> Option<FloatTolerance> {
     })
 }
 
-/// `10^{-6}` / `10^{-6}` / `1e-6` から `1e-6` を取り出す。
+/// Pulls `1e-6` out of `10^{-6}` or `1e-6`.
 fn extract_tolerance(statement: &str) -> Option<f64> {
     static POWER: OnceLock<regex::Regex> = OnceLock::new();
     static SCIENTIFIC: OnceLock<regex::Regex> = OnceLock::new();
@@ -333,7 +332,8 @@ fn extract_tolerance(statement: &str) -> Option<f64> {
     let scientific =
         SCIENTIFIC.get_or_init(|| regex::Regex::new(r"1\s*[eE]\s*-\s*(\d+)").expect("valid regex"));
 
-    // 「誤差」の周辺に出てくる指数を優先する。制約の 10^{-9} などを拾わないため。
+    // Prefer an exponent near the word for "error": the constraints section has
+    // powers of ten of its own that have nothing to do with the tolerance.
     let window = error_window(statement).unwrap_or(statement);
     let exponent = power
         .captures(window)
@@ -342,7 +342,7 @@ fn extract_tolerance(statement: &str) -> Option<f64> {
     Some(10f64.powi(-exponent))
 }
 
-/// 「誤差」を含む文だけを切り出す。
+/// The one sentence that mentions the error bound.
 fn error_window(statement: &str) -> Option<&str> {
     let start = statement
         .find("誤差")
@@ -357,7 +357,7 @@ fn error_window(statement: &str) -> Option<&str> {
     Some(&rest[..end.min(rest.len())])
 }
 
-/// `Time Limit: 2 sec / Memory Limit: 1024 MiB` から 2000 を取り出す。
+/// Reads 2000 out of `Time Limit: 2 sec / Memory Limit: 1024 MiB`.
 fn parse_time_limit(text: &str) -> Option<u64> {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
@@ -367,7 +367,7 @@ fn parse_time_limit(text: &str) -> Option<u64> {
     to_millis(&captures[1], &captures[2])
 }
 
-/// `2 sec` / `2.5 sec` / `500 msec` を秒→ミリ秒で読む。
+/// Reads `2 sec`, `2.5 sec` or `500 msec` as milliseconds.
 fn parse_duration(text: &str) -> Option<u64> {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     let re =
@@ -388,7 +388,6 @@ fn to_millis(value: &str, unit: &str) -> Option<u64> {
     Some(millis.round() as u64)
 }
 
-/// 子孫まで含めたテキスト。空白は畳む。
 fn text_of(element: ElementRef) -> String {
     element
         .text()
@@ -398,7 +397,7 @@ fn text_of(element: ElementRef) -> String {
         .join(" ")
 }
 
-/// 直下のテキストノードだけ。入れ子のリンク（Editorial など）を巻き込まない。
+/// Only the direct text nodes, so a nested link is not dragged in.
 fn direct_text_of(element: ElementRef) -> String {
     element
         .children()

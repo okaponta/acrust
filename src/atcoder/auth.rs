@@ -1,31 +1,32 @@
-//! ログイン状態の確認と、セッションクッキーの検証（設計 §3.1）。
+//! Login state, and checking a session cookie against the live site.
 //!
-//! 判定は `var userScreenName` が空かどうかで行う。
-//! `/contests/agc001/submit` を叩いて 200 かを見る方式（online-judge-tools）より軽い。
+//! Whether we are logged in is read off `var userScreenName`, which is cheaper
+//! than POSTing to `/contests/agc001/submit` and looking at the status, the way
+//! online-judge-tools does it.
 //!
-//! # ID / パスワードでログインできない理由
+//! # Why there is no id / password login
 //!
-//! AtCoder の `/login` フォームには Cloudflare Turnstile が入っている
-//! （`<div class="cf-challenge" data-sitekey="...">`）。ブラウザ上の Turnstile が
-//! 隠しフィールド `cf-turnstile-response` をフォームに差し込む仕組みで、
-//! これが無い POST は csrf_token が正しくても
-//! 「エラーが発生しました。」で弾かれる（2026-09-10 に実地確認）。
+//! AtCoder put Cloudflare Turnstile in front of `/login` in March 2025
+//! (`<div class="cf-challenge" data-sitekey="...">`). The widget is what fills in
+//! the hidden `cf-turnstile-response` field, so a plain POST is turned away with
+//! "エラーが発生しました。" however correct its csrf_token — confirmed against the
+//! live site on 2026-09-10.
 //!
-//! CAPTCHA を迂回するのは筋が悪いので、acrust は
-//! **ブラウザで取得済みのセッションクッキーを取り込む**方式を採る。
+//! Working around a CAPTCHA is the wrong thing to build, so acrust takes the
+//! session cookie the browser already holds instead.
 
 use crate::atcoder::client::{AtCoderClient, BASE_URL};
 use crate::atcoder::html;
 use anyhow::{bail, Result};
 
 pub const LOGIN_URL: &str = "https://atcoder.jp/login";
-/// ログイン状態の確認に使うページ。robots.txt で Disallow されていない。
+/// The page login state is read from. Not Disallowed by robots.txt.
 pub const HOME_URL: &str = "https://atcoder.jp/home";
 
-/// ログイン済みなら `Some(ユーザー名)`。
+/// `Some(user name)` when logged in.
 ///
-/// `/home` は未ログインでも 200 を返すので、ステータスではなく
-/// `userScreenName` の中身で判定する。
+/// `/home` answers 200 to anonymous requests too, so the status line proves
+/// nothing; only the contents of `userScreenName` do.
 pub fn current_user(client: &AtCoderClient) -> Result<Option<String>> {
     let response = client.get(HOME_URL)?;
     if response.is_redirect() {
@@ -35,7 +36,6 @@ pub fn current_user(client: &AtCoderClient) -> Result<Option<String>> {
     Ok(html::user_screen_name(&response.body))
 }
 
-/// 渡されたセッションクッキーが本当に使えるかを AtCoder に確かめ、ユーザー名を返す。
 pub fn verify_session_cookie(client: &AtCoderClient, cookie: &str) -> Result<String> {
     client.set_session_cookie(cookie);
     match current_user(client)? {
@@ -47,18 +47,16 @@ pub fn verify_session_cookie(client: &AtCoderClient, cookie: &str) -> Result<Str
     }
 }
 
-/// ログインページに Turnstile（CAPTCHA）があるか。
-///
-/// AtCoder が将来これを外したら ID / パスワードでのログインを復活できるので、
-/// 判定できるようにしておく。
+/// Whether the login page still carries the Turnstile widget. If AtCoder ever
+/// drops it, id / password login can come back.
 pub fn has_captcha(login_page: &str) -> bool {
     login_page.contains("cf-challenge") || login_page.contains("turnstile")
 }
 
-/// 貼り付けられた文字列からセッションクッキーの値を取り出す。
+/// Digs the session value out of whatever was pasted.
 ///
-/// DevTools からのコピーは `REVEL_SESSION=xxx` の形にも `xxx` だけの形にもなるし、
-/// Cookie ヘッダを丸ごと貼られることもある。どれも受け付ける。
+/// A DevTools copy comes out as `REVEL_SESSION=xxx`, as a bare `xxx`, or as an
+/// entire Cookie header, depending on where the user clicked. All three are fine.
 pub fn extract_session_value(pasted: &str) -> Option<String> {
     let pasted = pasted.trim();
     if pasted.is_empty() {
@@ -79,7 +77,6 @@ pub fn extract_session_value(pasted: &str) -> Option<String> {
     }
 }
 
-/// `/home` などの URL を組み立てる。
 #[allow(dead_code)]
 pub fn url(path: &str) -> String {
     format!("{BASE_URL}{path}")
@@ -108,7 +105,7 @@ mod tests {
 
     #[test]
     fn accepts_every_shape_the_devtools_copy_produces() {
-        // 値だけ
+        // the value on its own
         assert_eq!(
             extract_session_value("abc123%00def"),
             Some("abc123%00def".to_owned())
@@ -118,17 +115,17 @@ mod tests {
             extract_session_value("REVEL_SESSION=abc123"),
             Some("abc123".to_owned())
         );
-        // Cookie ヘッダ丸ごと
+        // an entire Cookie header
         assert_eq!(
             extract_session_value("REVEL_FLASH=; REVEL_SESSION=abc123; Path=/"),
             Some("abc123".to_owned())
         );
-        // 前後の空白と引用符
+        // surrounding space and quotes
         assert_eq!(
             extract_session_value("  \"abc123\"  "),
             Some("abc123".to_owned())
         );
-        // 空
+        // nothing usable
         assert_eq!(extract_session_value("   "), None);
         assert_eq!(extract_session_value("REVEL_SESSION="), None);
     }

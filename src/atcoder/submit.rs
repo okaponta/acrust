@@ -1,7 +1,8 @@
-//! 提出まわりのパース（設計 §3.4 / §4.9）。
+//! Parsing for the submit flow.
 //!
-//! 言語 ID はハードコードしない。実測でも、cargo-compete が書き込む `5054` に対して
-//! 現在の AtCoder は `6088` を使っており、言語アップデートのたびに変わる。
+//! The language id is never hardcoded: AtCoder currently answers `6088` for Rust,
+//! while cargo-compete still writes the long-dead `5054`. The number moves with
+//! every language update, so it is read off the submit page each time.
 
 use crate::atcoder::html;
 use anyhow::{anyhow, Result};
@@ -9,7 +10,7 @@ use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
-/// 提出ページの `<select>` に並ぶ言語。
+/// One entry of the language `<select>` on the submit page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Language {
     pub id: String,
@@ -20,10 +21,11 @@ fn selector(s: &'static str) -> Selector {
     Selector::parse(s).expect("static selector is valid")
 }
 
-/// 提出ページから言語の一覧を取り出す。
+/// The languages offered on the submit page.
 ///
-/// 言語の `<select>` は問題ごとに `div#select-lang-{screen_name}` として繰り返される。
-/// 問題が分かっていればそこに絞る。
+/// The `<select>` is repeated per problem as `div#select-lang-{screen_name}`, so
+/// a known problem narrows the search; otherwise the whole page is scanned and
+/// the duplicates folded away.
 pub fn parse_languages(html_text: &str, screen_name: Option<&str>) -> Vec<Language> {
     let document = Html::parse_document(html_text);
     let scoped = screen_name
@@ -51,11 +53,12 @@ pub fn parse_languages(html_text: &str, screen_name: Option<&str>) -> Vec<Langua
         .collect()
 }
 
-/// 提出フォームの隠しフィールドを、ページに書かれている通りに全部集める。
+/// Every hidden field of the submit form, exactly as the page writes it.
 ///
-/// `csrf_token` だけを拾うのではなくフォームごと写すのは、AtCoder が隠しフィールドを
-/// 増やしたときに黙って弾かれないようにするため（ブラウザは当然それも送る）。
-/// フォームが見つからなければ空を返すので、呼び出し側が `csrf_token` だけで組める。
+/// Copying the whole form rather than just `csrf_token` is what keeps acrust
+/// working the day AtCoder adds another hidden field: a browser would send it too,
+/// and a submission missing it is rejected with nothing useful said about why.
+/// An empty result lets the caller fall back to `csrf_token` alone.
 pub fn hidden_inputs(page: &str, contest: &str) -> Vec<(String, String)> {
     let document = Html::parse_document(page);
     let form = selector("form");
@@ -87,7 +90,7 @@ pub fn hidden_inputs(page: &str, contest: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
-/// `^Rust \(rustc` のような正規表現で言語を選ぶ。
+/// Picks a language by regex, e.g. `^Rust \(rustc`.
 pub fn pick_language(languages: &[Language], pattern: &str) -> Result<Language> {
     let regex = regex::Regex::new(pattern)
         .map_err(|e| anyhow!("[submit] language-pattern is not a valid regex: {e}"))?;
@@ -102,15 +105,15 @@ pub fn pick_language(languages: &[Language], pattern: &str) -> Result<Language> 
             languages.len()
         ));
     }
-    // 複数一致したら、新しいバージョンほど後ろに並ぶので最後を採る。
+    // On a tie take the last: AtCoder lists newer versions further down.
     Ok(matched.pop().expect("checked above").clone())
 }
 
-/// 提出一覧の行。POST 直後に自分の提出を見つけるために使う。
+/// A row of the submission list, used to find our own submission after the POST.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Submission {
     pub id: String,
-    /// `abc418_c` のような task screen name。
+    /// The task screen name, e.g. `abc418_c`.
     pub task: String,
     pub verdict: String,
 }
@@ -124,7 +127,7 @@ impl Submission {
     }
 }
 
-/// `/contests/{c}/submissions/me` の最初の行（＝いちばん新しい提出）。
+/// The first row of `/contests/{c}/submissions/me`, i.e. the newest submission.
 pub fn parse_latest_submission(html_text: &str) -> Option<Submission> {
     let document = Html::parse_document(html_text);
     let row = selector("table tbody tr");
@@ -133,7 +136,7 @@ pub fn parse_latest_submission(html_text: &str) -> Option<Submission> {
     let cell = selector("td");
 
     for tr in document.select(&row) {
-        // 提出へのリンクが無い行（見出しなど）は飛ばす。
+        // Rows with no submission link are headings or "nothing here" notices.
         let Some(id) = tr
             .select(&link)
             .filter_map(|a| a.value().attr("href"))
@@ -151,7 +154,7 @@ pub fn parse_latest_submission(html_text: &str) -> Option<Submission> {
             .next()
             .map(|span| span.text().collect::<String>().trim().to_owned())
             .or_else(|| {
-                // 判定中は label が無く、セルに `3/32` のような進捗が入る。
+                // While judging there is no label, just a `3/32` progress cell.
                 tr.select(&cell)
                     .map(|td| td.text().collect::<String>().trim().to_owned())
                     .find(|text| looks_like_progress(text))
@@ -191,7 +194,7 @@ fn looks_like_progress(text: &str) -> bool {
     }
 }
 
-/// ジャッジの途中経過。AtCoder のページ自身が叩く JSON API の形。
+/// A judging status, shaped after the JSON API the AtCoder page itself polls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Status {
     pub verdict: String,
@@ -214,10 +217,10 @@ struct StatusEntry {
     score: Option<String>,
 }
 
-/// `/contests/{c}/submissions/me/status/json?sids[]={id}` の応答を読む。
+/// Reads `/contests/{c}/submissions/me/status/json?sids[]={id}`.
 ///
-/// ページ全体（実測 27KB）ではなくこちらを使う。AtCoder のページ自身がこれを
-/// ポーリングしており、実測 651 バイトで済む。
+/// This is what the AtCoder page polls, and it measured 651 bytes against 27KB
+/// for re-fetching the submission list — worth it when polling every few seconds.
 pub fn parse_status_json(body: &str, id: &str) -> Option<Status> {
     let response: StatusResponse = serde_json::from_str(body).ok()?;
     let entry = response.result.get(id)?;
@@ -231,7 +234,7 @@ pub fn parse_status_json(body: &str, id: &str) -> Option<Status> {
     })
 }
 
-/// `<td>…</td><td>…</td>` を中身のテキストに割る。
+/// Splits `<td>…</td><td>…</td>` into the text of each cell.
 fn split_cells(fragment: &str) -> Vec<String> {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = RE.get_or_init(|| regex::Regex::new(r"(?s)<td[^>]*>(.*?)</td>").expect("valid regex"));
@@ -240,7 +243,7 @@ fn split_cells(fragment: &str) -> Vec<String> {
         .collect()
 }
 
-/// ジャッジが確定したか。確定したら追跡を即やめる（設計 §4.9）。
+/// Whether the verdict has settled, which is when polling stops.
 pub fn is_final(verdict: &str) -> bool {
     const FINAL: [&str; 9] = ["AC", "WA", "TLE", "MLE", "RE", "CE", "OLE", "QLE", "IE"];
     let verdict = verdict.trim();
@@ -251,7 +254,7 @@ pub fn is_final(verdict: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// 実物と同じ形。言語の `<select>` が問題ごとに繰り返される。
+    /// Shaped like the real page, with the language `<select>` repeated per problem.
     const SUBMIT_PAGE: &str = r#"
 <form action="/contests/dummy001/submit" method="POST">
   <input type="hidden" name="csrf_token" value="tok+en/=" />
@@ -289,10 +292,10 @@ mod tests {
 
     #[test]
     fn the_language_list_falls_back_to_the_whole_page() {
-        // 問題ごとの div が見つからなくても、ページ全体から拾えれば足りる。
+        // Missing the per-problem div is fine as long as the page still answers.
         let languages = parse_languages(SUBMIT_PAGE, Some("no-such-task"));
         assert!(pick_language(&languages, r"^Rust \(rustc").is_ok());
-        // 重複は畳む（同じ言語が問題の数だけ並ぶため）。
+        // Folded: the same language appears once per problem.
         assert_eq!(languages.iter().filter(|l| l.id == "6088").count(), 1);
     }
 
@@ -300,14 +303,14 @@ mod tests {
     fn the_hidden_fields_of_the_submit_form_are_copied_verbatim() {
         let hidden = hidden_inputs(SUBMIT_PAGE, "dummy001");
         assert_eq!(hidden, [("csrf_token".to_owned(), "tok+en/=".to_owned())]);
-        // 別のコンテストのフォームを拾わない。
+        // A form belonging to another contest is not picked up.
         assert!(hidden_inputs(SUBMIT_PAGE, "dummy002").is_empty());
     }
 
-    /// AtCoder は hidden input の value を HTML エスケープして返す。
-    /// 実物の csrf_token は `var csrfToken` が `ykoqlSD+jmy3…`、hidden input が
-    /// `ykoqlSD&#43;jmy3…`（Go のテンプレートが `+` を `&#43;` にする）。
-    /// 戻さずに送ると csrf_token が食い違って弾かれる。
+    /// AtCoder HTML-escapes the value of a hidden input: the same token reads
+    /// `ykoqlSD+jmy3…` in `var csrfToken` but `ykoqlSD&#43;jmy3…` in the form,
+    /// because Go's template escapes the `+`. Send it without decoding and the
+    /// token no longer matches, so the submission is turned away.
     #[test]
     fn an_html_escaped_hidden_value_comes_back_decoded() {
         let page = r#"<form action="/contests/abc418/submit">
@@ -316,7 +319,7 @@ mod tests {
         assert_eq!(hidden[0].1, "ykoqlSD+jmy3Jss0=");
     }
 
-    /// 将来 AtCoder が隠しフィールドを増やしても、そのまま送れること。
+    /// A hidden field AtCoder has not invented yet still has to be carried along.
     #[test]
     fn an_extra_hidden_field_is_carried_along() {
         let page = SUBMIT_PAGE.replace(
@@ -339,7 +342,7 @@ mod tests {
         assert!(err.contains("language-id"), "{err}");
     }
 
-    /// 判定済みの行。
+    /// A row that has already been judged.
     const JUDGED_ROW: &str = r#"
 <table><tbody>
   <tr>
@@ -398,7 +401,7 @@ mod tests {
         assert_eq!(submission.id, "72649417");
     }
 
-    /// 実物と同じ形（AtCoder のページ自身がポーリングしている API）。
+    /// Shaped like the real response from the API the AtCoder page polls.
     const STATUS_JSON: &str = r#"{"Result":{"72649417":{"Html":"<td class='text-center'><span class='label label-success' title=\"正解\">AC</span></td><td class='text-right'>95 ms</td><td class='text-right'>13344 KiB</td>","Score":"350"}}}"#;
 
     #[test]
@@ -408,7 +411,7 @@ mod tests {
         assert_eq!(status.time.as_deref(), Some("95 ms"));
         assert_eq!(status.memory.as_deref(), Some("13344 KiB"));
         assert_eq!(status.score.as_deref(), Some("350"));
-        // 別の提出 ID を渡しても混ざらない。
+        // Another submission id must not match this entry.
         assert!(parse_status_json(STATUS_JSON, "1").is_none());
     }
 

@@ -1,8 +1,7 @@
-//! AtCoder の HTML から必要な値だけを取り出す。
+//! Picking the few values acrust needs out of AtCoder's HTML.
 //!
-//! AtCoder は全ページの `<script>` に `csrfToken` と `userScreenName` を埋めている（設計 §3.1）。
-//! ログイン状態の判定もこれで足りるので、`/contests/*/submit` を叩いて 200 かどうかを見る
-//! （`online-judge-tools` の方式）より軽く、robots.txt 的にも安全。
+//! Every page carries `csrfToken` and `userScreenName` in a `<script>` block, so
+//! a single GET answers both "who am I" and "what token do I post with".
 
 use regex::Regex;
 use std::sync::OnceLock;
@@ -36,7 +35,8 @@ fn tag_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?s)<[^>]*>").expect("valid regex"))
 }
 
-/// `var csrfToken = "..."`。無ければ hidden input からも探す。
+/// Reads `var csrfToken = "..."`, falling back to the form's hidden input on the
+/// pages that do not carry the script block.
 pub fn csrf_token(html: &str) -> Option<String> {
     csrf_re()
         .captures(html)
@@ -44,9 +44,8 @@ pub fn csrf_token(html: &str) -> Option<String> {
         .map(|c| c[1].to_owned())
 }
 
-/// ログインしていれば `Some(ユーザー名)`、していなければ `None`。
-///
-/// `var userScreenName` 自体が無いページ（AtCoder 以外など）でも `None` を返す。
+/// `Some(user name)` when logged in. A page without `var userScreenName` at all
+/// (anything that is not AtCoder) reads as logged out rather than as an error.
 pub fn user_screen_name(html: &str) -> Option<String> {
     let name = screen_name_re().captures(html)?[1].to_owned();
     if name.is_empty() {
@@ -56,7 +55,8 @@ pub fn user_screen_name(html: &str) -> Option<String> {
     }
 }
 
-/// `<div role="alert">` の中身をプレーンテキストにして返す。ログイン失敗の理由などが入る。
+/// The `<div role="alert">` banners as plain text. This is where AtCoder puts the
+/// reason a request was turned away.
 pub fn alerts(html: &str) -> Vec<String> {
     alert_re()
         .captures_iter(html)
@@ -65,26 +65,27 @@ pub fn alerts(html: &str) -> Vec<String> {
         .collect()
 }
 
-/// 閉じるボタンの `×` は本文ではないので落とす。
+/// The `×` belongs to the dismiss button, not to the message.
 fn strip_dismiss_button(text: &str) -> String {
     text.trim_start_matches(['\u{d7}', ' ']).trim().to_owned()
 }
 
-/// タグを剥がし、実体参照を戻し、空白を1つに畳む。
 pub fn to_text(html: &str) -> String {
     let stripped = tag_re().replace_all(html, " ");
     let decoded = decode_entities(&stripped);
     decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// HTML の実体参照を戻す。`<pre>` の中身の復元にも使う（サンプルケースの取得で必要）。
+/// Undoes HTML entities. Also used on `<pre>` contents, where getting this wrong
+/// corrupts the sample cases themselves.
 pub fn decode_entities(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(start) = rest.find('&') {
         out.push_str(&rest[..start]);
         rest = &rest[start..];
-        // `&` から最大 12 バイト以内に `;` があるものだけ実体参照とみなす。
+        // Only a `;` within 12 bytes counts: sample inputs are full of bare `&`,
+        // and an unbounded search would swallow everything up to the next one.
         let end = rest
             .char_indices()
             .take_while(|(i, _)| *i <= 12)
@@ -134,7 +135,7 @@ fn decode_one(name: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// 実物の `/login` と同じ形（設計 §3.1 で確認した構造）。問題文は一切含めない。
+    /// Shaped like the real `/login`. Carries no problem text.
     const LOGIN_PAGE: &str = r#"
 <!DOCTYPE html><html><head><script>
     var LANG = "ja";
@@ -197,7 +198,7 @@ mod tests {
         );
         assert_eq!(decode_entities("&quot;x&quot;"), "\"x\"");
         assert_eq!(decode_entities("&#x3042;"), "あ");
-        // 実体参照でない `&` はそのまま残す（サンプル入力が壊れないこと）。
+        // A bare `&` survives untouched, or sample inputs would be corrupted.
         assert_eq!(
             decode_entities("1 & 2 &notanentity 3"),
             "1 & 2 &notanentity 3"

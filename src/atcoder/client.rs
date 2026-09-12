@@ -1,15 +1,12 @@
-//! AtCoder への HTTP アクセス。
+//! HTTP access to AtCoder.
 //!
-//! AtCoder は短時間に数リクエストで実際に 429 を返してくる（設計 §3.6）。
-//! そのためこのクライアントは必ず
+//! A handful of requests in quick succession really does earn a 429, so every
+//! request goes through a minimum interval (1s by default), exponential backoff
+//! on 429 / 5xx (honouring `Retry-After`), and a User-Agent that says who we are.
 //!
-//! - リクエスト間隔の下限（既定 1 秒）
-//! - 429 / 5xx の指数バックオフ（`Retry-After` があればそれに従う）
-//! - 素性を明示する User-Agent
-//!
-//! を通す。リダイレクトは追わない。ログインの成否も提出の成否も
-//! 「どこへリダイレクトされたか」で判定するため、こちらで制御したほうが確実で、
-//! 中間レスポンスの `Set-Cookie` も拾える。
+//! Redirects are not followed. Both login and submission report their outcome
+//! through *where* they redirect to, so the hop has to stay visible — and
+//! following it by hand also keeps the `Set-Cookie` on the intermediate response.
 
 use crate::atcoder::cookies::CookieStore;
 use crate::config::AtcoderConfig;
@@ -23,9 +20,9 @@ use std::time::{Duration, Instant};
 
 pub const BASE_URL: &str = "https://atcoder.jp";
 
-/// バックオフの初期値。以降 2 倍ずつ。
+/// First backoff; doubles from there.
 const BACKOFF_BASE: Duration = Duration::from_secs(1);
-/// `Retry-After` が非常識に長い場合の上限。
+/// Ceiling for an unreasonable `Retry-After`.
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
 
 pub struct AtCoderClient {
@@ -40,14 +37,14 @@ impl AtCoderClient {
     pub fn new(config: &AtcoderConfig) -> Result<Self> {
         let cookies = Arc::new(CookieStore::new());
         let mut headers = HeaderMap::new();
-        // 問題文は日本語ページを主に見る（設計 §3.3）。
+        // Sample cases are scraped from the Japanese page.
         headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("ja,en;q=0.8"));
 
         let http = Client::builder()
             .user_agent(config.resolved_user_agent())
             .default_headers(headers)
             .cookie_provider(Arc::clone(&cookies))
-            // リダイレクトは自分で追う（Set-Cookie と Location を見たいため）。
+            // Redirects are followed by hand; see the module comment.
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(30))
             .build()
@@ -62,7 +59,8 @@ impl AtCoderClient {
         })
     }
 
-    /// 保存済みセッションがあれば読み込む。戻り値はログイン済みらしいかどうか。
+    /// Loads the saved session, if there is one. `true` means we now hold a
+    /// cookie, not that AtCoder has accepted it.
     pub fn load_session(&self) -> Result<bool> {
         match session::load()? {
             Some(saved) => {
@@ -78,7 +76,6 @@ impl AtCoderClient {
         self.cookies.set(COOKIE_NAME, value);
     }
 
-    /// 現在のセッションクッキー。ログイン直後の永続化に使う。
     pub fn session_cookie(&self) -> Option<String> {
         self.cookies.get(COOKIE_NAME)
     }
@@ -87,7 +84,6 @@ impl AtCoderClient {
         self.cookies.clear();
     }
 
-    /// 現在のクッキーをそのまま `Session` にする。
     pub fn session(&self, user_screen_name: &str) -> Option<Session> {
         self.session_cookie()
             .map(|cookie| Session::new(cookie, user_screen_name.to_owned()))
@@ -97,7 +93,6 @@ impl AtCoderClient {
         self.send(self.http.request(Method::GET, url), url)
     }
 
-    /// `application/x-www-form-urlencoded` の POST。`Referer` は呼び出し側で付ける。
     pub fn post_form(
         &self,
         url: &str,
@@ -149,7 +144,6 @@ impl AtCoderClient {
         }
     }
 
-    /// 直前のリクエストから `interval` 経つまで待つ。
     fn wait_for_slot(&self) {
         if let Some(last) = self.last_request.get() {
             let elapsed = last.elapsed();
@@ -168,18 +162,18 @@ fn backoff(attempt: u32) -> Duration {
     BACKOFF_BASE * 2u32.saturating_pow(attempt.saturating_sub(1))
 }
 
-/// `Retry-After` は秒数形式だけ解釈する。AtCoder は HTTP-date 形式を返さない。
+/// Only the delay-seconds form is read; AtCoder never sends the HTTP-date one.
 fn retry_after(response: &Response) -> Option<Duration> {
     let value = response.headers().get(RETRY_AFTER)?.to_str().ok()?;
     let secs: u64 = value.trim().parse().ok()?;
     Some(Duration::from_secs(secs).min(MAX_RETRY_AFTER))
 }
 
-/// レスポンスのうち acrust が使う部分だけを取り出したもの。
+/// The parts of a response acrust actually reads.
 pub struct AtCoderResponse {
     pub url: String,
     pub status: StatusCode,
-    /// `Location` ヘッダ（絶対 URL に直したもの）。
+    /// `Location`, made absolute.
     pub location: Option<String>,
     pub body: String,
 }
@@ -207,7 +201,8 @@ impl AtCoderResponse {
         self.status.is_redirection()
     }
 
-    /// 2xx でなければエラーにする。404 は「まだ存在しない」の意味を持つので呼び出し側で分岐する。
+    /// Fails on anything but 2xx. Callers that care handle 404 first: on AtCoder
+    /// it means "not published yet", which is not an error worth reporting.
     pub fn error_for_status(&self) -> Result<()> {
         if self.status.is_success() {
             return Ok(());

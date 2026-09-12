@@ -1,8 +1,8 @@
-//! 中身を読み書きできるクッキーストア。
+//! A cookie store whose contents can be read back out.
 //!
-//! `reqwest::cookie::Jar` は保存済みのクッキーを取り出せないため、
-//! ログイン後に `REVEL_SESSION` を拾って永続化する用途には使えない。
-//! acrust が話す相手は atcoder.jp だけなので、名前→値の平坦な表で足りる。
+//! `reqwest::cookie::Jar` never hands back the cookies it holds, so it cannot be
+//! used to pick up `REVEL_SESSION` after login and persist it. acrust only ever
+//! talks to atcoder.jp, so a flat name-to-value map is enough.
 
 use reqwest::header::HeaderValue;
 use std::collections::BTreeMap;
@@ -38,10 +38,11 @@ impl CookieStore {
     }
 }
 
-/// `Set-Cookie` の値から `name=value` だけを取り出す。属性（Path, Expires…）は捨てる。
+/// Takes `name=value` out of a `Set-Cookie` header and drops the attributes.
 ///
-/// acrust は 1 ドメイン・1 セッションしか扱わないので、属性を保持しても使い道がない。
-/// ただし削除指示（`Max-Age=0` / 過去の `Expires`）だけは値が空で来るため、空値は削除として扱う。
+/// One domain and one session leaves nothing to do with `Path` or `Expires`. A
+/// deletion (`Max-Age=0`, or an `Expires` in the past) arrives with an empty
+/// value, so an empty value is reported as a removal.
 fn parse_set_cookie(header: &str) -> Option<(String, Option<String>)> {
     let pair = header.split(';').next()?.trim();
     let (name, value) = pair.split_once('=')?;

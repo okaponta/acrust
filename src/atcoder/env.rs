@@ -1,34 +1,35 @@
-//! AtCoder のジャッジ環境の取り出し（設計 §3.5）。★ acrust の目玉
+//! Reading AtCoder's judge environment.
 //!
-//! AtCoder は言語アップデートごとに、**ジャッジが実際に使う `Cargo.toml` を
-//! そのまま含んだインストールスクリプト**を公開している。そこから
-//! 依存クレート・`Cargo.lock`・`edition`・rustc のバージョンを丸ごと取れる。
+//! With every language update AtCoder publishes an install script that embeds the
+//! exact `Cargo.toml` the judge builds with. Dependencies, `Cargo.lock`, edition
+//! and rustc version all come straight from there.
 //!
-//! cargo-compete ではこれらを手で更新する必要があり、実際に
-//! 「設定は 2023 年の環境のまま、ジャッジは 2025 年」という状態が起きていた。
+//! Keeping these in step by hand is what goes wrong otherwise: cargo-compete
+//! users routinely end up compiling against a 2023 environment while the judge
+//! has moved on to 2025.
 
 use anyhow::{anyhow, Context as _, Result};
 use scraper::{Html, Selector};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-/// インストールスクリプトから読み取ったジャッジ環境。
+/// The judge environment, as read out of an install script.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JudgeEnvironment {
-    /// `Rust (rustc 1.89.0)`。提出時の言語選択に出る文字列。
+    /// `Rust (rustc 1.89.0)`, the name shown in the submit page's language list.
     pub display: String,
-    /// `1.89.0`。
+    /// `1.89.0`.
     pub rustc: String,
-    /// `2024`。
+    /// `2024`.
     pub edition: String,
-    /// `[dependencies]` 以降のテキスト。コメントごとそのまま持つ。
+    /// Everything from `[dependencies]` on, kept as text, comments included.
     pub dependencies: String,
-    /// ジャッジが使う `Cargo.lock` の取得元。
+    /// Where to fetch the `Cargo.lock` the judge builds with.
     pub cargo_lock_url: Option<String>,
 }
 
 impl JudgeEnvironment {
-    /// クレート名 -> 指定（`"=0.14.0"` や `{ version = "…", features = […] }`）。
+    /// Crate name -> requirement (`"=0.14.0"`, or a table with features).
     pub fn dependency_table(&self) -> Result<toml::Table> {
         let table: toml::Table =
             toml::from_str(&self.dependencies).context("[dependencies] is not valid TOML")?;
@@ -39,7 +40,7 @@ impl JudgeEnvironment {
     }
 }
 
-/// 言語一覧のページから、その言語のインストールスクリプトの URL を探す。
+/// Finds the install script for a language on the language-list page.
 pub fn find_install_script(html_text: &str, pattern: &str) -> Result<String> {
     let regex = regex::Regex::new(pattern)
         .map_err(|e| anyhow!("[submit] language-pattern is not a valid regex: {e}"))?;
@@ -70,7 +71,6 @@ pub fn find_install_script(html_text: &str, pattern: &str) -> Result<String> {
     ))
 }
 
-/// インストールスクリプト（TOML）からジャッジ環境を取り出す。
 pub fn parse_install_script(text: &str) -> Result<JudgeEnvironment> {
     let script: toml::Table =
         toml::from_str(text).context("the install script is not valid TOML")?;
@@ -98,8 +98,9 @@ pub fn parse_install_script(text: &str) -> Result<JudgeEnvironment> {
         .context("the judge's Cargo.toml has no edition")?
         .to_owned();
 
-    // `[dependencies]` 以降をテキストのまま持つ。バージョンの由来を書いた
-    // コメント（`# 202411から:`）ごと残したいので、TOML に通して書き直さない。
+    // Kept as text rather than round-tripped through TOML: AtCoder annotates the
+    // versions with comments saying which language update introduced them, and
+    // re-serialising would throw those away.
     let start = manifest
         .find("[dependencies]")
         .context("the judge's Cargo.toml has no [dependencies]")?;
@@ -128,7 +129,7 @@ fn capture(text: &str, regex: &regex::Regex) -> Option<String> {
     Some(regex.captures(text)?[1].to_owned())
 }
 
-/// `cat > {path} << EOF` から次の `EOF` までを取り出す。
+/// The body of `cat > {path} << EOF`, up to the terminating `EOF`.
 fn heredoc(script: &str, path: &str) -> Option<String> {
     let marker = format!("cat > {path} << EOF");
     let start = script.find(&marker)? + marker.len();
@@ -146,12 +147,12 @@ fn heredoc(script: &str, path: &str) -> Option<String> {
     Some(rest[..end].to_owned())
 }
 
-/// 2つの依存表の違い。`env update` が書き換える前に見せる。
+/// What changed between two dependency tables, shown before `env update` writes.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DependencyDiff {
     pub added: Vec<String>,
     pub removed: Vec<String>,
-    /// クレート名 -> (前, 後)。
+    /// Crate name, then before and after.
     pub changed: Vec<(String, String, String)>,
 }
 
@@ -196,7 +197,8 @@ pub fn diff_dependencies(before: &toml::Table, after: &toml::Table) -> Dependenc
 mod tests {
     use super::*;
 
-    /// 実物と同じ形。`<details>` に言語ごとの表が入り、その中にスクリプトへのリンクがある。
+    /// Shaped like the real page: one `<details>` per language, holding a table
+    /// whose row links to that language's install script.
     const LANGUAGE_LIST: &str = r#"
 <html><body>
   <details><summary><code class="font-mono">Ruby (CRuby 3.3.6)</code></summary>
@@ -214,7 +216,7 @@ mod tests {
 </body></html>
 "#;
 
-    /// 実物と同じ形を最小限に写したインストールスクリプト。
+    /// A minimal install script shaped like the real one.
     const INSTALL_SCRIPT: &str = r#"
 language = 'Rust'
 display = 'Rust (rustc 1.89.0)'
@@ -278,10 +280,10 @@ compile = 'cargo build --release --quiet --offline'
             Some("https://raw.githubusercontent.com/rust-lang-ja/atcoder-proposal/7a724cd/Cargo.lock")
         );
 
-        // バージョンの由来を書いたコメントも残す。
+        // The comments explaining where a version came from survive.
         assert!(environment.dependencies.starts_with("[dependencies]"));
         assert!(environment.dependencies.contains("# 202411から:"));
-        // ヒアドキュメントの終端より先は含めない。
+        // Nothing past the end of the heredoc is dragged in.
         assert!(!environment.dependencies.contains("cargo build"));
 
         let table = environment.dependency_table().unwrap();
