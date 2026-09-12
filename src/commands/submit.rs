@@ -83,16 +83,19 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
     let language = choose_language(&config, &page.body, &screen_name, &pattern)?;
     ui::field("言語", &format!("{} (id={})", language.name, language.id));
 
-    let response = client.post_form(
-        &submit_url,
-        &[
-            ("csrf_token", csrf_token.as_str()),
-            ("data.TaskScreenName", screen_name.as_str()),
-            ("data.LanguageId", language.id.as_str()),
-            ("sourceCode", source.as_str()),
-        ],
-        &submit_url,
-    )?;
+    let form = submit_form(
+        &page.body,
+        &package.contest,
+        &csrf_token,
+        &screen_name,
+        &language.id,
+        &source,
+    );
+    let form: Vec<(&str, &str)> = form
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    let response = client.post_form(&submit_url, &form, &submit_url)?;
 
     let location = match &response.location {
         // AtCoder 自身が /submissions/me へ飛ばす。ここに来れば受理されている。
@@ -104,11 +107,8 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
         }
         None => {
             let _ = cache::forget_language(&pattern);
-            let alerts = crate::atcoder::html::alerts(&response.body);
-            match alerts.first() {
-                Some(alert) => bail!("提出が受理されませんでした: {alert}"),
-                None => bail!("提出が受理されませんでした（{}）", response.status),
-            }
+            report_rejection(&response);
+            bail!("提出が受理されませんでした");
         }
     };
 
@@ -129,6 +129,53 @@ pub fn run(problem: Option<String>, force: bool, no_watch: bool) -> Result<ExitC
         return Ok(ExitCode::SUCCESS);
     }
     Ok(watch(&client, &config, &package.contest, &submission, &url))
+}
+
+/// POST するフォームを組む。
+///
+/// 隠しフィールドはページに書かれている通りに写し、そのうえで問題・言語・ソースを載せる。
+/// `csrf_token` だけを送る形にしないのは、AtCoder が隠しフィールドを増やしたときに
+/// 「エラーが発生しました。」とだけ言われて原因が分からなくなるため。
+fn submit_form(
+    page: &str,
+    contest: &str,
+    csrf_token: &str,
+    screen_name: &str,
+    language_id: &str,
+    source: &str,
+) -> Vec<(String, String)> {
+    let mut form = parse::hidden_inputs(page, contest);
+    if !form.iter().any(|(name, _)| name == "csrf_token") {
+        form.push(("csrf_token".to_owned(), csrf_token.to_owned()));
+    }
+    for (name, value) in [
+        ("data.TaskScreenName", screen_name),
+        ("data.LanguageId", language_id),
+        ("sourceCode", source),
+    ] {
+        match form.iter_mut().find(|(existing, _)| existing == name) {
+            Some(slot) => slot.1 = value.to_owned(),
+            None => form.push((name.to_owned(), value.to_owned())),
+        }
+    }
+    form
+}
+
+/// 受理されなかったときに、次の一手が分かるだけの情報を出す。
+///
+/// AtCoder は理由を「エラーが発生しました。」としか言わないことがあるので、
+/// こちら側で分かること（HTTP ステータス・セッションが生きているか）を添える。
+fn report_rejection(response: &crate::atcoder::client::AtCoderResponse) {
+    ui::warn(&format!("AtCoder の応答: {}", response.status));
+    for alert in crate::atcoder::html::alerts(&response.body) {
+        ui::warn_detail(&alert);
+    }
+    if crate::atcoder::html::user_screen_name(&response.body).is_none() {
+        ui::warn_detail("この応答ではログインしていない扱いになっています");
+        ui::warn_detail("`acrust login` でセッションを取り直してください");
+    } else {
+        ui::warn_detail("ブラウザから同じ問題に提出できるか確かめてください");
+    }
 }
 
 /// 提出前にサンプルテストを通す。通らなければここで止める。
@@ -333,6 +380,49 @@ mod tests {
             interval = next_interval(interval);
         }
         assert_eq!(requests, 8, "1 分で {requests} 回");
+    }
+
+    /// 提出するのは「ページのフォーム + 問題・言語・ソース」。
+    #[test]
+    fn the_form_keeps_every_hidden_field_the_page_carries() {
+        let page = r#"
+<form action="/contests/abc418/submit" method="POST">
+  <input type="hidden" name="csrf_token" value="from-the-page" />
+  <input type="hidden" name="data.SomethingNew" value="42" />
+</form>"#;
+        let form = submit_form(
+            page,
+            "abc418",
+            "fallback",
+            "abc418_a",
+            "6088",
+            "fn main(){}",
+        );
+        assert_eq!(
+            form,
+            [
+                ("csrf_token".to_owned(), "from-the-page".to_owned()),
+                ("data.SomethingNew".to_owned(), "42".to_owned()),
+                ("data.TaskScreenName".to_owned(), "abc418_a".to_owned()),
+                ("data.LanguageId".to_owned(), "6088".to_owned()),
+                ("sourceCode".to_owned(), "fn main(){}".to_owned()),
+            ]
+        );
+    }
+
+    /// フォームが読めなくても、`var csrfToken` から取った値で組み立てられること。
+    #[test]
+    fn a_page_without_a_form_falls_back_to_the_scripts_token() {
+        let form = submit_form(
+            "<html></html>",
+            "abc418",
+            "fallback",
+            "abc418_a",
+            "6088",
+            "x",
+        );
+        assert_eq!(form[0], ("csrf_token".to_owned(), "fallback".to_owned()));
+        assert_eq!(form.len(), 4);
     }
 
     #[test]
