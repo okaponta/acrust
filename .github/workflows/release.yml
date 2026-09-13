@@ -8,7 +8,20 @@ on:
     tags: ["v*"]
 
 jobs:
+  # upload-rust-binary-action does not create the release, it waits for one, so
+  # this has to come first or every upload job times out looking for it.
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   upload:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
