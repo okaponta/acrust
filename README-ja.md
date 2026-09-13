@@ -2,7 +2,7 @@
 
 [English](README.md) | 日本語
 
-**AtCoder × Rust 専用**の競技プログラミング支援ツール。
+**AtCoder × Rust** の競技プログラミング支援ツール。
 
 ```console
 $ cargo install acrust   # ビルド済みバイナリなら cargo binstall acrust
