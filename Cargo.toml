@@ -7,7 +7,7 @@ description = "A CLI for competitive programming on AtCoder with Rust"
 repository = "https://github.com/okaponta/acrust"
 homepage = "https://github.com/okaponta/acrust"
 license = "MIT OR Apache-2.0"
-keywords = ["atcoder", "competitive-programming", "cli"]
+keywords = ["atcoder", "competitive", "cli"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 
