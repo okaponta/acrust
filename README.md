@@ -2,7 +2,7 @@
 
 English | [日本語](README-ja.md)
 
-A competitive programming CLI **built only for AtCoder and Rust**.
+A competitive programming CLI **built for AtCoder and Rust**.
 
 ```console
 $ cargo install acrust   # or: cargo binstall acrust, for a prebuilt binary

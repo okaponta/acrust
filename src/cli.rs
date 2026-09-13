@@ -10,7 +10,7 @@ use std::process::ExitCode;
 #[command(
     name = "acrust",
     version,
-    about = "A competitive programming CLI built only for AtCoder and Rust"
+    about = "A competitive programming CLI built for AtCoder and Rust"
 )]
 struct Cli {
     #[command(subcommand)]
